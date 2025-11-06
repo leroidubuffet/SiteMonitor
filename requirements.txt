@@ -1,0 +1,39 @@
+# Core HTTP Client
+httpx==0.27.0
+httpx[http2]==0.27.0  # HTTP/2 support for better performance
+
+# Scheduling
+APScheduler==3.10.4
+
+# Credential Management
+keyring==25.5.0  # Updated to latest stable version
+python-dotenv==1.0.1  # Updated to latest stable version
+
+# Configuration
+PyYAML==6.0.2  # Updated to latest stable version
+pydantic==2.10.3  # Updated to latest v2 - fixes CVE-2021-29510 and provides better performance
+
+# Logging & Monitoring
+coloredlogs==15.0.1  # Colored console output
+colorama==0.4.6  # Cross-platform colored terminal text
+# Removed python-json-logger due to CVE-2025-27607 - using standard logging with JSON formatting instead
+
+# Date/Time handling
+python-dateutil==2.9.0  # Updated to latest stable version
+
+# Type hints support
+typing-extensions==4.12.2  # Updated to latest stable version
+
+# Development & Testing (optional)
+pytest==8.3.4  # Updated to latest stable version
+pytest-cov==5.0.0  # Updated to latest stable version
+pytest-mock==3.14.0  # Updated to latest stable version
+pytest-asyncio==0.24.0  # Updated to latest stable version
+black==24.10.0  # Updated to latest stable version
+flake8==7.1.1  # Updated to latest stable version
+mypy==1.13.0  # Updated to latest stable version
+
+# Optional: Enhanced features (commented out by default)
+# prometheus-client==0.21.0  # Updated - Metrics export for Prometheus
+# Note: sentry-sdk removed due to CVE - consider alternative error tracking solutions
+# Note: requests removed due to CVE - using httpx for all HTTP operations instead

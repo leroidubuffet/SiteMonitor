@@ -1,0 +1,108 @@
+# InfoRuta Website Monitor Configuration
+
+monitoring:
+  url: "https://inforuta-rce.es/"
+  interval_minutes: 15
+  timeout_seconds: 30
+  user_agent: "InfoRuta-Monitor/1.0"
+
+checks:
+  enabled:
+    - uptime
+    - authentication
+    - health
+
+  uptime:
+    endpoints:
+      - "/"
+    expected_status: [200, 301, 302]
+    check_ssl: true
+
+  authentication:
+    enabled: true
+    login_endpoint: "/"
+    success_indicators:
+      - "Usuario"
+      - "session"
+      - "dashboard"
+    max_retries: 2
+
+  health:
+    enabled: false # Enable after authentication is working
+    protected_endpoint: "/ajax/alertasUsuario.aspx"
+    session_timeout_minutes: 20
+    expected_content:
+      - "alertas"
+
+retry:
+  max_attempts: 3
+  backoff_factor: 3
+  max_backoff_seconds: 60
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  recovery_timeout_minutes: 30
+  half_open_attempts: 2
+
+notifications:
+  console:
+    enabled: true
+    show_timestamps: true
+    colored_output: true
+
+  email:
+    enabled: false # Set to true when email is configured
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    use_tls: true
+    from_address: "${EMAIL_FROM}" # From environment
+    to_addresses:
+      - "${EMAIL_TO}"
+    alert_on:
+      - downtime
+      - auth_failure
+      - slow_response
+      - recovery
+    batch_window_minutes: 5 # Batch alerts within this window
+
+  slack:
+    enabled: false
+    webhook_url: "${SLACK_WEBHOOK}"
+    channel: "#monitoring"
+    alert_on:
+      - downtime
+      - recovery
+
+logging:
+  level: INFO
+  file_path: "./logs/monitor.log"
+  error_file_path: "./logs/monitor.error.log"
+  max_bytes: 10485760 # 10MB
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+performance:
+  track_metrics: true
+  warning_threshold_ms: 3000 # Warn if response > 3 seconds
+  critical_threshold_ms: 10000 # Critical if response > 10 seconds
+
+  metrics_to_track:
+    - response_time
+    - dns_lookup_time
+    - tcp_connection_time
+    - tls_handshake_time
+    - time_to_first_byte
+
+reporting:
+  daily_digest:
+    enabled: false
+    send_at_hour: 9 # Send daily report at 9 AM
+    include_metrics: true
+    include_availability: true
+
+  weekly_report:
+    enabled: false
+    send_on_day: 1 # Monday
+    send_at_hour: 9
