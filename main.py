@@ -214,11 +214,11 @@ Examples:
     # Start monitoring
     print("""
     ╔═══════════════════════════════════════════════════════╗
-    ║           InfoRuta Website Monitor v1.0.0            ║
+    ║           InfoRuta Website Monitor v1.0.0             ║
     ║                                                       ║
-    ║  Monitoring: https://inforuta-rce.es/                ║
-    ║  Interval: Every 15 minutes                          ║
-    ║  Press Ctrl+C to stop                                ║
+    ║  Monitoring: https://inforuta-rce.es/                 ║
+    ║  Interval: Every 15 minutes                           ║
+    ║  Press Ctrl+C to stop                                 ║
     ╚═══════════════════════════════════════════════════════╝
     """)
 

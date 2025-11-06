@@ -85,7 +85,7 @@ notifications:
   console:
     enabled: true
     colored_output: true
-    
+
   email:
     enabled: false  # Set to true after configuring credentials
     alert_on:
@@ -262,5 +262,5 @@ For issues or questions, please contact the development team.
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: January 2025
+**Version**: 1.0.0
+**Last Updated**: November 2025
