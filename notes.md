@@ -1,7 +1,8 @@
 Without credentials:
-Check https://www.aemet.es/
+https://www.aemet.es/
+https://www.dgt.es/conoce-el-estado-del-trafico/camaras-de-trafico/
 
 With credentials:
-Check https://inforuta-rce.es/
+https://inforuta-rce.es/
 https://vialidad.acpofiteco.com/
 https://www.fomento-vi.es/

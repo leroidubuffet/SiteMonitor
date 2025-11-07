@@ -1,14 +1,14 @@
 """Email notifier for sending alerts via SMTP."""
 
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from typing import Any, Dict, List, Optional
 
-from .base_notifier import BaseNotifier
 from ..checkers.base_checker import CheckResult
 from ..storage.credential_manager import CredentialManager
+from .base_notifier import BaseNotifier
 
 
 class EmailNotifier(BaseNotifier):
@@ -76,13 +76,19 @@ class EmailNotifier(BaseNotifier):
             )
             self.enabled = False
 
-    def notify(self, result: CheckResult, previous_result: CheckResult = None) -> bool:
+    def notify(
+        self,
+        result: CheckResult,
+        previous_result: CheckResult = None,
+        site_name: str = None,
+    ) -> bool:
         """
         Send email notification for a check result.
 
         Args:
             result: Current check result
             previous_result: Previous check result
+            site_name: Name of the site being checked
 
         Returns:
             True if email sent successfully
@@ -93,7 +99,7 @@ class EmailNotifier(BaseNotifier):
         try:
             # Determine email subject and type
             subject, email_type = self._get_email_subject_and_type(
-                result, previous_result
+                result, previous_result, site_name
             )
 
             # Check if we should send this type of alert
@@ -109,8 +115,8 @@ class EmailNotifier(BaseNotifier):
                 return False
 
             # Create email content
-            html_content = self._create_html_email(result, previous_result)
-            text_content = self._create_text_email(result, previous_result)
+            html_content = self._create_html_email(result, previous_result, site_name)
+            text_content = self._create_text_email(result, previous_result, site_name)
 
             # Send email
             return self._send_email(subject, html_content, text_content)
@@ -153,34 +159,47 @@ class EmailNotifier(BaseNotifier):
             return False
 
     def _get_email_subject_and_type(
-        self, result: CheckResult, previous_result: CheckResult = None
+        self,
+        result: CheckResult,
+        previous_result: CheckResult = None,
+        site_name: str = None,
     ) -> tuple:
         """Get email subject and type based on results."""
-        site_url = self.config.get("monitoring", {}).get("url", "InfoRuta")
+        site_identifier = site_name or self.config.get("monitoring", {}).get(
+            "url", "Site"
+        )
 
         # Detect state changes
         if previous_result:
             if previous_result.is_success and result.is_failure:
-                return (f"🔴 ALERT: {site_url} is DOWN", "downtime")
+                return (f"🔴 ALERT: {site_identifier} is DOWN", "downtime")
             elif previous_result.is_failure and result.is_success:
-                return (f"✅ RECOVERY: {site_url} is back online", "recovery")
+                return (f"✅ RECOVERY: {site_identifier} is back online", "recovery")
 
         # Regular status emails
         if result.is_failure:
             if result.check_type == "authentication":
-                return (f"🔐 AUTH FAILURE: {site_url} login failed", "auth_failure")
+                return (
+                    f"🔐 AUTH FAILURE: {site_identifier} login failed",
+                    "auth_failure",
+                )
             else:
-                return (f"🔴 FAILURE: {site_url} check failed", "downtime")
+                return (f"🔴 FAILURE: {site_identifier} check failed", "downtime")
         elif result.is_warning:
-            return (f"⚠️ WARNING: {site_url} slow response", "slow_response")
+            return (f"⚠️ WARNING: {site_identifier} slow response", "slow_response")
         else:
-            return (f"✅ OK: {site_url} is online", "status_update")
+            return (f"✅ OK: {site_identifier} is online", "status_update")
 
     def _create_html_email(
-        self, result: CheckResult, previous_result: CheckResult = None
+        self,
+        result: CheckResult,
+        previous_result: CheckResult = None,
+        site_name: str = None,
     ) -> str:
         """Create HTML email content."""
-        site_url = self.config.get("monitoring", {}).get("url", "InfoRuta")
+        site_identifier = site_name or self.config.get("monitoring", {}).get(
+            "url", "Site"
+        )
 
         # Determine status color
         status_color = {
@@ -214,7 +233,7 @@ class EmailNotifier(BaseNotifier):
                 </div>
 
                 <div class="content">
-                    <p><strong>Site:</strong> <a href="{site_url}">{site_url}</a></p>
+                    <p><strong>Site:</strong> {site_identifier}</p>
                     <p><strong>Check Time:</strong> {result.timestamp.strftime("%Y-%m-%d %H:%M:%S")}</p>
                     <p><strong>Response Time:</strong> {result.response_time_ms:.0f}ms</p>
         """
@@ -266,16 +285,21 @@ class EmailNotifier(BaseNotifier):
         return html
 
     def _create_text_email(
-        self, result: CheckResult, previous_result: CheckResult = None
+        self,
+        result: CheckResult,
+        previous_result: CheckResult = None,
+        site_name: str = None,
     ) -> str:
         """Create plain text email content."""
-        site_url = self.config.get("monitoring", {}).get("url", "InfoRuta")
+        site_identifier = site_name or self.config.get("monitoring", {}).get(
+            "url", "Site"
+        )
 
         text = f"""
-InfoRuta Monitor Alert
+Multi-Site Monitor Alert
 {"=" * 40}
 
-Site: {site_url}
+Site: {site_identifier}
 Check Type: {result.check_type.upper()}
 Status: {result.status.value.upper()}
 Time: {result.timestamp.strftime("%Y-%m-%d %H:%M:%S")}

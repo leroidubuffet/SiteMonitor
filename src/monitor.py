@@ -3,15 +3,16 @@
 import logging
 import signal
 import sys
-from typing import Dict, Any, List, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 import yaml
 
-from .checkers import UptimeChecker, AuthChecker, HealthChecker, CheckResult
+from .checkers import AuthChecker, CheckResult, HealthChecker, UptimeChecker
 from .notifiers import ConsoleNotifier, EmailNotifier
-from .storage import CredentialManager, StateManager
-from .utils import setup_logging, MetricsCollector, CircuitBreaker
 from .scheduler import MonitorScheduler
+from .storage import CredentialManager, StateManager
+from .utils import CircuitBreaker, MetricsCollector, setup_logging
 
 
 class Monitor:
@@ -32,27 +33,22 @@ class Monitor:
 
         # Setup logging
         self.logger = setup_logging(self.config)
-        self.logger.info("InfoRuta Monitor starting...")
+        self.logger.info("Multi-Site Monitor starting...")
 
         # Initialize components
         self.credential_manager = CredentialManager(env_file)
         self.state_manager = StateManager()
         self.metrics_collector = MetricsCollector()
 
-        # Initialize circuit breaker if enabled
-        cb_config = self.config.get("circuit_breaker", {})
-        if cb_config.get("enabled", True):
-            self.circuit_breaker = CircuitBreaker(
-                failure_threshold=cb_config.get("failure_threshold", 5),
-                recovery_timeout=cb_config.get("recovery_timeout_minutes", 30) * 60,
-            )
-        else:
-            self.circuit_breaker = None
+        # Get list of sites from config
+        self.sites = self.config.get("sites", [])
+        if not self.sites:
+            self.logger.error("No sites configured in config.yaml")
+            sys.exit(1)
 
-        # Initialize checkers
-        self.checkers = self._initialize_checkers()
+        self.logger.info(f"Configured to monitor {len(self.sites)} site(s)")
 
-        # Initialize notifiers
+        # Initialize notifiers (shared across all sites)
         self.notifiers = self._initialize_notifiers()
 
         # Initialize scheduler
@@ -75,31 +71,62 @@ class Monitor:
             print(f"Failed to load configuration: {e}")
             sys.exit(1)
 
-    def _initialize_checkers(self) -> Dict[str, Any]:
-        """Initialize all enabled checkers."""
+    def _initialize_checkers_for_site(
+        self, site_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Initialize checkers for a specific site.
+
+        Args:
+            site_config: Site-specific configuration
+
+        Returns:
+            Dictionary of checkers for this site
+        """
         checkers = {}
-        enabled_checks = self.config.get("checks", {}).get("enabled", [])
+        enabled_checks = site_config.get("checks_enabled", [])
+        site_name = site_config.get("name", "Unknown")
 
         if "uptime" in enabled_checks:
-            checkers["uptime"] = UptimeChecker(self.config)
-            self.logger.info("Uptime checker initialized")
+            # Create merged config with site-specific settings
+            merged_config = self.config.copy()
+            merged_config["monitoring"] = {"url": site_config.get("url")}
+            merged_config["checks"] = {"uptime": site_config.get("uptime", {})}
+
+            checkers["uptime"] = UptimeChecker(merged_config)
+            self.logger.debug(f"[{site_name}] Uptime checker initialized")
 
         if "authentication" in enabled_checks:
+            # Create merged config with site-specific settings
+            merged_config = self.config.copy()
+            merged_config["monitoring"] = {"url": site_config.get("url")}
+            merged_config["checks"] = {
+                "authentication": site_config.get("authentication", {})
+            }
+
             checkers["authentication"] = AuthChecker(
-                self.config, credential_manager=self.credential_manager
+                merged_config,
+                credential_manager=self.credential_manager,
+                site_config=site_config,
             )
-            self.logger.info("Authentication checker initialized")
+            self.logger.debug(f"[{site_name}] Authentication checker initialized")
 
         if "health" in enabled_checks:
             # Health checker needs auth checker for session
             auth_checker = checkers.get("authentication")
             if auth_checker:
+                merged_config = self.config.copy()
+                merged_config["monitoring"] = {"url": site_config.get("url")}
+                merged_config["checks"] = {"health": site_config.get("health", {})}
+
                 checkers["health"] = HealthChecker(
-                    self.config, auth_checker=auth_checker
+                    merged_config, auth_checker=auth_checker
                 )
-                self.logger.info("Health checker initialized")
+                self.logger.debug(f"[{site_name}] Health checker initialized")
             else:
-                self.logger.warning("Health checker requires authentication checker")
+                self.logger.warning(
+                    f"[{site_name}] Health checker requires authentication checker"
+                )
 
         return checkers
 
@@ -122,21 +149,66 @@ class Monitor:
         return notifiers
 
     def perform_checks(self):
-        """Perform all enabled checks."""
-        self.logger.info("Starting monitoring checks...")
-        results = []
+        """Perform all enabled checks for all sites."""
+        self.logger.info(f"Starting monitoring checks for {len(self.sites)} site(s)...")
+        total_results = 0
 
-        # Check if circuit breaker is open
-        if self.circuit_breaker and self.circuit_breaker.is_open:
-            self.logger.warning("Circuit breaker is OPEN, skipping checks")
-            return
+        # Loop through each site
+        for site_config in self.sites:
+            site_name = site_config.get("name", "Unknown")
+            self.logger.info(f"[{site_name}] Starting checks...")
+
+            # Check per-site circuit breaker
+            cb_config = self.config.get("circuit_breaker", {})
+            site_state = self.state_manager._get_site_state(site_name)
+            circuit_breaker_state = site_state.get("circuit_breaker", {})
+
+            if cb_config.get("enabled", True) and circuit_breaker_state.get(
+                "is_open", False
+            ):
+                self.logger.warning(
+                    f"[{site_name}] Circuit breaker is OPEN, skipping checks"
+                )
+                continue
+
+            # Initialize checkers for this site
+            checkers = self._initialize_checkers_for_site(site_config)
+
+            # Perform checks for this site
+            results = self._perform_site_checks(site_name, site_config, checkers)
+            total_results += len(results)
+
+        # Log summary
+        self.logger.info(
+            f"Completed {total_results} check(s) across {len(self.sites)} site(s)"
+        )
+
+        # Display metrics summary periodically
+        if self.state_manager.state["global"]["total_checks"] % 10 == 0:
+            self._log_metrics_summary()
+
+    def _perform_site_checks(
+        self, site_name: str, site_config: Dict[str, Any], checkers: Dict[str, Any]
+    ) -> List[CheckResult]:
+        """
+        Perform checks for a specific site.
+
+        Args:
+            site_name: Name of the site
+            site_config: Site configuration
+            checkers: Dictionary of checkers for this site
+
+        Returns:
+            List of check results
+        """
+        results = []
 
         # Perform checks in order: uptime -> auth -> health
         check_order = ["uptime", "authentication", "health"]
 
         for check_type in check_order:
-            if check_type in self.checkers:
-                checker = self.checkers[check_type]
+            if check_type in checkers:
+                checker = checkers[check_type]
 
                 try:
                     # Skip health check if auth failed
@@ -147,15 +219,16 @@ class Monitor:
                         )
                         if auth_result and not auth_result.success:
                             self.logger.warning(
-                                "Skipping health check due to authentication failure"
+                                f"[{site_name}] Skipping health check due to authentication failure"
                             )
                             continue
 
                     # Perform the check
-                    self.logger.info(f"Performing {check_type} check...")
+                    self.logger.debug(f"[{site_name}] Performing {check_type} check...")
 
-                    if self.circuit_breaker:
-                        result = self.circuit_breaker.call(checker.check)
+                    # Call check with site_name for per-site state
+                    if check_type == "authentication":
+                        result = checker.check(site_name=site_name)
                     else:
                         result = checker.check()
 
@@ -168,40 +241,49 @@ class Monitor:
 
                     # Get previous result for comparison
                     previous_result_dict = self.state_manager.get_last_result(
-                        check_type
+                        check_type, site_name
                     )
-                    previous_result = None
+                    previous_success = True
                     if previous_result_dict:
-                        # Convert dict back to CheckResult for comparison
-                        # This is simplified - in production you'd deserialize properly
                         previous_success = previous_result_dict.get("success", True)
-                    else:
-                        previous_success = True
 
-                    # Record in state manager
-                    self.state_manager.record_result(result)
+                    # Record in state manager (with site name)
+                    self.state_manager.record_result(result, site_name)
 
-                    # Send notifications
-                    self._send_notifications(result, previous_success)
+                    # Send notifications (with site context)
+                    self._send_notifications(result, previous_success, site_name)
 
                 except Exception as e:
                     self.logger.error(
-                        f"Error during {check_type} check: {e}", exc_info=True
+                        f"[{site_name}] Error during {check_type} check: {e}",
+                        exc_info=True,
                     )
 
                     # Update circuit breaker on failure
-                    if self.circuit_breaker:
-                        self.circuit_breaker._on_failure()
+                    cb_config = self.config.get("circuit_breaker", {})
+                    if cb_config.get("enabled", True):
+                        site_state = self.state_manager._get_site_state(site_name)
+                        failure_threshold = cb_config.get("failure_threshold", 5)
+                        if (
+                            site_state["circuit_breaker"]["failure_count"]
+                            >= failure_threshold
+                        ):
+                            site_state["circuit_breaker"]["is_open"] = True
+                            self.logger.warning(f"[{site_name}] Circuit breaker OPENED")
 
-        # Log summary
-        self.logger.info(f"Completed {len(results)} checks")
+        return results
 
-        # Display metrics summary periodically
-        if self.state_manager.state["statistics"]["total_checks"] % 10 == 0:
-            self._log_metrics_summary()
+    def _send_notifications(
+        self, result: CheckResult, previous_success: bool, site_name: str
+    ):
+        """
+        Send notifications for a check result.
 
-    def _send_notifications(self, result: CheckResult, previous_success: bool):
-        """Send notifications for a check result."""
+        Args:
+            result: Check result
+            previous_success: Whether previous check was successful
+            site_name: Name of the site being checked
+        """
         # Determine if this is a state change
         is_state_change = (previous_success and result.is_failure) or (
             not previous_success and result.is_success
@@ -211,16 +293,18 @@ class Monitor:
             try:
                 # Always show in console
                 if isinstance(notifier, ConsoleNotifier):
-                    notifier.notify(result)
+                    notifier.notify(result, site_name=site_name)
                 # Only send email/other notifications on state changes
                 elif is_state_change or (
                     result.is_failure
-                    and self.state_manager.get_consecutive_failures(result.check_type)
+                    and self.state_manager.get_consecutive_failures(
+                        result.check_type, site_name
+                    )
                     == 1
                 ):
-                    notifier.notify(result)
+                    notifier.notify(result, site_name=site_name)
             except Exception as e:
-                self.logger.error(f"Failed to send notification: {e}")
+                self.logger.error(f"[{site_name}] Failed to send notification: {e}")
 
     def _log_metrics_summary(self):
         """Log metrics summary."""
@@ -238,14 +322,21 @@ class Monitor:
         """Start the monitor."""
         self.running = True
 
-        # Validate credentials
-        cred_status = self.credential_manager.validate_credentials()
-        self.logger.info(f"Credential status: {cred_status}")
+        # Validate credentials for all sites
+        for site_config in self.sites:
+            site_name = site_config.get("name", "Unknown")
+            credential_key = site_config.get("credential_key")
 
-        if not cred_status.get("inforuta_configured"):
-            self.logger.warning(
-                "InfoRuta credentials not configured - authentication checks will fail"
-            )
+            if credential_key:
+                creds = self.credential_manager.get_credentials_by_key(credential_key)
+                if not creds.get("username") or not creds.get("password"):
+                    self.logger.warning(
+                        f"[{site_name}] Credentials not configured for '{credential_key}' - authentication checks will fail"
+                    )
+                else:
+                    self.logger.info(
+                        f"[{site_name}] Credentials validated for '{credential_key}'"
+                    )
 
         # Schedule monitoring job
         interval_minutes = self.config.get("monitoring", {}).get("interval_minutes", 15)

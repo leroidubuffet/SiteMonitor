@@ -2,11 +2,12 @@
 
 import sys
 from datetime import datetime
-from typing import Dict, Any, List
-from colorama import init, Fore, Back, Style
+from typing import Any, Dict, List
 
-from .base_notifier import BaseNotifier
+from colorama import Back, Fore, Style, init
+
 from ..checkers.base_checker import CheckResult, CheckStatus
+from .base_notifier import BaseNotifier
 
 # Initialize colorama for cross-platform colored output
 init(autoreset=True)
@@ -21,13 +22,19 @@ class ConsoleNotifier(BaseNotifier):
             self.config.get("notifications", {}).get("console", {}).get("enabled", True)
         )
 
-    def notify(self, result: CheckResult, previous_result: CheckResult = None) -> bool:
+    def notify(
+        self,
+        result: CheckResult,
+        previous_result: CheckResult = None,
+        site_name: str = None,
+    ) -> bool:
         """
         Display notification in console.
 
         Args:
             result: Current check result
             previous_result: Previous check result
+            site_name: Name of the site being checked
 
         Returns:
             True if displayed successfully
@@ -50,7 +57,7 @@ class ConsoleNotifier(BaseNotifier):
 
             # Build notification message
             message = self._format_console_message(
-                result, previous_result, colored_output
+                result, previous_result, colored_output, site_name
             )
 
             # Add timestamp if enabled
@@ -106,6 +113,7 @@ class ConsoleNotifier(BaseNotifier):
         result: CheckResult,
         previous_result: CheckResult = None,
         colored: bool = True,
+        site_name: str = None,
     ) -> str:
         """
         Format a message for console display.
@@ -114,6 +122,7 @@ class ConsoleNotifier(BaseNotifier):
             result: Check result
             previous_result: Previous result
             colored: Use colored output
+            site_name: Name of the site
 
         Returns:
             Formatted message string
@@ -134,6 +143,15 @@ class ConsoleNotifier(BaseNotifier):
         check_type = result.check_type.upper()
         status = result.status.value.upper()
         response_time = f"{result.response_time_ms:.0f}ms"
+
+        # Format site name
+        if site_name:
+            if colored:
+                site_label = f"{Fore.MAGENTA}[{site_name}]{Style.RESET_ALL}"
+            else:
+                site_label = f"[{site_name}]"
+        else:
+            site_label = ""
 
         # Apply colors if enabled
         if colored:
@@ -211,13 +229,21 @@ class ConsoleNotifier(BaseNotifier):
             }.get(result.status, "[?]")
 
         # Build main message
-        message_parts = [
-            f"{status_icon} {check_type_formatted}: {status_formatted}",
-            f"({response_time_formatted})",
-        ]
+        message_parts = []
 
+        # Add site label first if present
+        if site_label:
+            message_parts.append(site_label)
+
+        # Add state message if present
         if state_msg:
-            message_parts.insert(0, state_msg)
+            message_parts.append(state_msg)
+
+        # Add main status
+        message_parts.append(
+            f"{status_icon} {check_type_formatted}: {status_formatted}"
+        )
+        message_parts.append(f"({response_time_formatted})")
 
         if result.status_code:
             message_parts.append(f"HTTP {result.status_code}")

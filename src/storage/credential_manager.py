@@ -1,9 +1,9 @@
 """Secure credential management using keyring and environment variables."""
 
-import os
 import logging
-from typing import Optional, Dict, Any
+import os
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 try:
     import keyring
@@ -125,6 +125,22 @@ class CredentialManager:
                 return False
         return True
 
+    def get_credentials_by_key(self, key: str) -> Dict[str, Optional[str]]:
+        """
+        Get credentials for a specific site by key.
+
+        Args:
+            key: Site credential key (e.g., 'inforuta', 'vialidad', 'fomento')
+
+        Returns:
+            Dictionary with username and password
+        """
+        key_upper = key.upper()
+        return {
+            "username": self.get_credential(f"{key_upper}_USERNAME"),
+            "password": self.get_credential(f"{key_upper}_PASSWORD"),
+        }
+
     def get_inforuta_credentials(self) -> Dict[str, Optional[str]]:
         """
         Get InfoRuta login credentials.
@@ -132,10 +148,25 @@ class CredentialManager:
         Returns:
             Dictionary with username and password
         """
-        return {
-            "username": self.get_credential("INFORUTA_USERNAME"),
-            "password": self.get_credential("INFORUTA_PASSWORD"),
-        }
+        return self.get_credentials_by_key("inforuta")
+
+    def get_vialidad_credentials(self) -> Dict[str, Optional[str]]:
+        """
+        Get Vialidad ACP login credentials.
+
+        Returns:
+            Dictionary with username and password
+        """
+        return self.get_credentials_by_key("vialidad")
+
+    def get_fomento_credentials(self) -> Dict[str, Optional[str]]:
+        """
+        Get Fomento VI login credentials.
+
+        Returns:
+            Dictionary with username and password
+        """
+        return self.get_credentials_by_key("fomento")
 
     def get_email_credentials(self) -> Dict[str, Optional[str]]:
         """

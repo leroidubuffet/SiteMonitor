@@ -1,12 +1,13 @@
 """Uptime checker for basic website availability monitoring."""
 
+import socket
+import ssl
 import time
 from datetime import datetime
-from typing import Dict, Any, List, Optional
-import httpx
-import ssl
-import socket
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
+
+import httpx
 
 from .base_checker import BaseChecker, CheckResult, CheckStatus
 

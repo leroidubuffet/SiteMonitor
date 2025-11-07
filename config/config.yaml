@@ -1,38 +1,86 @@
-# InfoRuta Website Monitor Configuration
+# Multi-Site Website Monitor Configuration
 
 monitoring:
-  url: "https://inforuta-rce.es/"
   interval_minutes: 15
   timeout_seconds: 30
-  user_agent: "InfoRuta-Monitor/1.0"
+  user_agent: "Multi-Site-Monitor/1.0"
 
-checks:
-  enabled:
-    - uptime
-    - authentication
-    - health
+# List of sites to monitor
+sites:
+  # Public websites (uptime checks only)
+  - name: "AEMET"
+    url: "https://www.aemet.es/"
+    checks_enabled:
+      - uptime
+    uptime:
+      endpoints:
+        - "/"
+      expected_status: [200, 301, 302]
+      check_ssl: true
 
-  uptime:
-    endpoints:
-      - "/"
-    expected_status: [200, 301, 302]
-    check_ssl: true
+  - name: "DGT Traffic Cameras"
+    url: "https://www.dgt.es/conoce-el-estado-del-trafico/camaras-de-trafico/"
+    checks_enabled:
+      - uptime
+    uptime:
+      endpoints:
+        - "/"
+      expected_status: [200, 301, 302]
+      check_ssl: true
 
-  authentication:
-    enabled: true
-    login_endpoint: "/"
-    success_indicators:
-      - "Usuario"
-      - "session"
-      - "dashboard"
-    max_retries: 2
+  # Authenticated websites (uptime + authentication checks)
+  - name: "InfoRuta RCE"
+    url: "https://inforuta-rce.es/"
+    credential_key: "inforuta"
+    checks_enabled:
+      - uptime
+      - authentication
+    uptime:
+      endpoints:
+        - "/"
+      expected_status: [200, 301, 302]
+      check_ssl: true
+    authentication:
+      enabled: true
+      login_endpoint: "/"
+      success_indicators:
+        - "Usuario"
+        - "session"
+        - "dashboard"
+      max_retries: 2
 
-  health:
-    enabled: false # Enable after authentication is working
-    protected_endpoint: "/ajax/alertasUsuario.aspx"
-    session_timeout_minutes: 20
-    expected_content:
-      - "alertas"
+  - name: "Vialidad ACP"
+    url: "https://vialidad.acpofiteco.com/"
+    checks_enabled:
+      - uptime
+    uptime:
+      endpoints:
+        - "/"
+        - "/login"
+      expected_status: [200, 301, 302]
+      check_ssl: true
+    # Note: This site uses React/SPA authentication (API-based), not traditional forms
+    # Authentication checking requires API endpoint integration (future enhancement)
+
+  - name: "Fomento VI"
+    url: "https://www.fomento-vi.es/"
+    credential_key: "fomento"
+    checks_enabled:
+      - uptime
+      - authentication
+    uptime:
+      endpoints:
+        - "/"
+      expected_status: [200, 301, 302]
+      check_ssl: true
+    authentication:
+      enabled: true
+      login_endpoint: "/"
+      success_indicators:
+        - "usuario"
+        - "bienvenido"
+        - "sesión"
+      max_retries: 2
 
 retry:
   max_attempts: 3
