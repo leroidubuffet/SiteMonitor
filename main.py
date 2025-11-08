@@ -7,8 +7,8 @@ with authentication support and comprehensive alerting.
 """
 
 import argparse
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add src to path
@@ -103,9 +103,10 @@ def test_connection(config_path: str, env_file: str = None):
     print("InfoRuta Monitor - Connection Test")
     print("=" * 60 + "\n")
 
-    from src.checkers import UptimeChecker, AuthChecker
-    from src.storage import CredentialManager
     import yaml
+
+    from src.checkers import AuthChecker, UptimeChecker
+    from src.storage import CredentialManager
 
     # Load config
     with open(config_path, "r") as f:
@@ -214,9 +215,14 @@ Examples:
     # Start monitoring
     print("""
     ╔═══════════════════════════════════════════════════════╗
-    ║           InfoRuta Website Monitor v1.0.0             ║
+    ║           Vialidad Website Monitor v1.0.0             ║
     ║                                                       ║
-    ║  Monitoring: https://inforuta-rce.es/                 ║
+    ║  Monitoring:                                          ║
+    ║   https://inforuta-rce.es/                            ║
+    ║   https://www.aemet.es/                               ║
+    ║   https://www.dgt.es/                                 ║
+    ║   https://vialidad.acpofiteco.com/                    ║
+    ║   https://www.fomento-vi.es/                          ║
     ║  Interval: Every 15 minutes                           ║
     ║  Press Ctrl+C to stop                                 ║
     ╚═══════════════════════════════════════════════════════╝
