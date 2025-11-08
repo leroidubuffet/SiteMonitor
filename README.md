@@ -10,6 +10,7 @@ A comprehensive Python monitoring solution that performs uptime checks, authenti
 - **Smart Notifications**:
   - Console output with colored status indicators and site labels
   - Email alerts for downtime/recovery per site
+  - Telegram bot notifications with debug/regular modes
   - Batch notifications to reduce alert fatigue
 - **Per-Site Circuit Breakers**: Independent failure thresholds for each site
 - **Performance Metrics**: Track response times, availability percentage, and trends per site
@@ -221,6 +222,264 @@ When configured, the monitor sends HTML-formatted emails for each site:
      email:
        enabled: true
    ```
+
+## Telegram Notifications
+
+The monitor includes Telegram bot integration with two notification modes for flexible alerting.
+
+### Notification Modes
+
+#### Regular Mode (Default)
+Notifies only on important state changes:
+- Site downtime (when a site goes down)
+- Site recovery (when a site comes back online)
+- Authentication failures (login issues)
+
+This mode reduces notification fatigue by only alerting on actionable events.
+
+#### Debug Mode
+Notifies on EVERY check for all sites (every 15 minutes):
+- All uptime checks
+- All authentication checks
+- All health checks
+- Success and failure states
+
+Useful for:
+- Initial setup and testing
+- Troubleshooting connectivity issues
+- Monitoring during critical periods
+
+### Setup Instructions
+
+#### Step 1: Create a Telegram Bot
+
+1. Open Telegram and search for **@BotFather**
+2. Send `/newbot` to create a new bot
+3. Follow the prompts to choose a name and username
+4. BotFather will give you a **Bot Token** (looks like `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
+5. Save this token - you'll need it for configuration
+
+#### Step 2: Get Your Chat ID
+
+**Option A: Using your bot**
+1. Send a message to your bot (any message like "hello")
+2. Visit this URL in your browser (replace `<YOUR_BOT_TOKEN>` with your actual token):
+   ```
+   https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
+   ```
+3. Look for `"chat":{"id":123456789}` in the response
+4. The number is your **Chat ID**
+
+**Option B: Using @userinfobot**
+1. Search for **@userinfobot** on Telegram
+2. Start a chat with the bot
+3. It will send you your Chat ID
+
+**For Group Chats:**
+1. Add your bot to the group
+2. Send a message in the group
+3. Visit the getUpdates URL (as in Option A)
+4. Look for `"chat":{"id":-123456789}` (note the negative number for groups)
+
+#### Step 3: Configure Credentials
+
+Add your bot credentials to `config/.env`:
+
+```bash
+# Telegram Configuration
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+TELEGRAM_CHAT_ID=your_chat_id_here
+```
+
+#### Step 4: Enable Telegram in Configuration
+
+Edit `config/config.yaml`:
+
+```yaml
+notifications:
+  telegram:
+    enabled: true              # Enable Telegram notifications
+    debug_mode: false          # false = regular mode, true = debug mode
+    batch_notifications: true  # Combine multiple alerts into one message
+    alert_on:
+      - downtime
+      - recovery
+      - auth_failure
+```
+
+### Usage Examples
+
+#### Start with Regular Mode (State Changes Only)
+
+```bash
+# Default behavior - notifies on failures/recoveries only
+python3 main.py
+```
+
+Output in Telegram:
+```
+❌ [InfoRuta RCE] UPTIME FAILURE 🚨 NEW FAILURE
+
+⏱ Response: Timeout after 30s
+❗️ Error: Connection timeout
+🕐 Time: 2025-11-08 14:30:15
+```
+
+#### Start with Debug Mode (All Checks)
+
+```bash
+# Enable debug mode via command line
+python3 main.py --telegram-debug
+```
+
+Output in Telegram (every 15 minutes):
+```
+✅ [AEMET] UPTIME SUCCESS
+
+⏱ Response: 245ms
+📊 HTTP: 200
+🕐 Time: 2025-11-08 14:30:15
+
+[Debug Mode]
+```
+
+```
+✅ [InfoRuta RCE] AUTHENTICATION SUCCESS
+
+⏱ Response: 1823ms
+🕐 Time: 2025-11-08 14:30:16
+
+[Debug Mode]
+```
+
+#### Permanent Debug Mode
+
+To enable debug mode permanently, edit `config/config.yaml`:
+
+```yaml
+notifications:
+  telegram:
+    enabled: true
+    debug_mode: true  # Always send all checks
+```
+
+### Message Formats
+
+The Telegram notifier sends rich formatted messages with emojis:
+
+**Success Message:**
+```
+✅ [AEMET] UPTIME SUCCESS
+
+⏱ Response: 245ms
+📊 HTTP: 200
+🕐 Time: 2025-11-08 14:30:15
+```
+
+**Failure Message:**
+```
+❌ [InfoRuta RCE] UPTIME FAILURE 🚨 NEW FAILURE
+
+⏱ Response: 5000ms
+📊 HTTP: 500
+💬 Internal Server Error
+❗️ Error: Server returned HTTP 500
+🕐 Time: 2025-11-08 14:30:15
+```
+
+**Recovery Message:**
+```
+✅ [Vialidad ACP] UPTIME SUCCESS 🔄 RECOVERED
+
+⏱ Response: 276ms
+📊 HTTP: 200
+🕐 Time: 2025-11-08 14:35:20
+```
+
+**Batch Message (Multiple Sites):**
+```
+📋 Batch Status Update
+
+✅ 3 OK | ❌ 2 FAIL
+
+✅ AEMET            UPTI 245ms
+✅ InfoRuta RCE     AUTH 1823ms
+❌ Vialidad ACP     UPTI Timeout
+✅ Fomento VI       UPTI 421ms
+❌ DGT Traffic      UPTI 500ms
+
+🕐 2025-11-08 14:30:15
+```
+
+### Command-Line Options
+
+```bash
+# Regular mode (state changes only)
+python3 main.py
+
+# Debug mode (all checks)
+python3 main.py --telegram-debug
+
+# Test with a single check
+python3 main.py --check-once --telegram-debug
+
+# Use custom config
+python3 main.py --config my_config.yaml --telegram-debug
+
+# Test the Telegram integration
+python3 tests/test_telegram.py
+```
+
+### Troubleshooting
+
+**Testing Your Setup:**
+
+Run the comprehensive test suite to verify everything works:
+```bash
+python3 tests/test_telegram.py
+```
+
+This will test:
+- Credential configuration
+- Regular mode notifications (state changes only)
+- Debug mode notifications (all checks)
+- Batch notifications
+
+You should receive test messages in your Telegram chat.
+
+**"Telegram enabled but missing BOT_TOKEN or CHAT_ID"**
+- Check that both variables are set in `config/.env`
+- Verify there are no extra spaces or quotes around the values
+- Ensure the .env file is in the `config/` directory
+
+**"Telegram API error: Unauthorized"**
+- Your bot token is invalid or expired
+- Copy the token again from @BotFather
+- Make sure you copied the entire token (including the colon and everything after it)
+
+**"Telegram API error: Bad Request: chat not found"**
+- Your chat ID is incorrect
+- Make sure you've sent at least one message to the bot first
+- For group chats, ensure the bot has been added to the group
+- Check if the chat ID should be negative (for groups)
+
+**"Bot doesn't respond to messages"**
+- This is normal - the bot only sends notifications, it doesn't respond to commands
+- The monitor controls when messages are sent
+- You can test by running `python3 main.py --check-once`
+
+**Messages not appearing in debug mode:**
+- Verify `debug_mode: true` in config.yaml or use `--telegram-debug` flag
+- Check that `enabled: true` in the telegram configuration
+- Look at console output to verify Telegram notifier is initialized
+- Check logs at `logs/monitor.log` for Telegram-related errors
+
+### Security Notes
+
+- Keep your bot token secret - it provides full access to your bot
+- Don't commit `.env` files to version control
+- For group chats, be aware that all group members can see notifications
+- You can revoke and regenerate bot tokens via @BotFather if compromised
 
 ## Advanced Features
 

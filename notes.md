@@ -6,3 +6,8 @@ With credentials:
 https://inforuta-rce.es/
 https://vialidad.acpofiteco.com/
 https://www.fomento-vi.es/
+
+Branches:
+  main - basic inforuta-rce.es check
+  multisite - checks all sites
+  OfitecoBot - telegram notifier

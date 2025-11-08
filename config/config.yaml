@@ -122,6 +122,15 @@ notifications:
       - downtime
       - recovery
 
+  telegram:
+    enabled: false # Set to true when Telegram is configured
+    debug_mode: false # true = notify on ALL checks, false = state changes only
+    batch_notifications: true # Combine multiple notifications into one message
+    alert_on:
+      - downtime
+      - recovery
+      - auth_failure
+
 logging:
   level: INFO
   file_path: "./logs/monitor.log"

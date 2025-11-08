@@ -192,6 +192,18 @@ class CredentialManager:
         """
         return self.get_credential("SLACK_WEBHOOK")
 
+    def get_telegram_credentials(self) -> Dict[str, Optional[str]]:
+        """
+        Get Telegram bot configuration.
+
+        Returns:
+            Dictionary with bot_token and chat_id
+        """
+        return {
+            "bot_token": self.get_credential("TELEGRAM_BOT_TOKEN"),
+            "chat_id": self.get_credential("TELEGRAM_CHAT_ID"),
+        }
+
     def validate_credentials(self) -> Dict[str, bool]:
         """
         Validate that required credentials are present.

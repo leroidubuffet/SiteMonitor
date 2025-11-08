@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from .checkers import AuthChecker, CheckResult, HealthChecker, UptimeChecker
-from .notifiers import ConsoleNotifier, EmailNotifier
+from .notifiers import ConsoleNotifier, EmailNotifier, TelegramNotifier
 from .scheduler import MonitorScheduler
 from .storage import CredentialManager, StateManager
 from .utils import CircuitBreaker, MetricsCollector, setup_logging
@@ -19,7 +19,10 @@ class Monitor:
     """Main monitoring orchestrator."""
 
     def __init__(
-        self, config_path: str = "config/config.yaml", env_file: Optional[str] = None
+        self,
+        config_path: str = "config/config.yaml",
+        env_file: Optional[str] = None,
+        telegram_debug: bool = False,
     ):
         """
         Initialize the monitor.
@@ -27,9 +30,18 @@ class Monitor:
         Args:
             config_path: Path to configuration file
             env_file: Path to .env file
+            telegram_debug: Override Telegram debug mode setting
         """
         # Load configuration
         self.config = self._load_config(config_path)
+
+        # Override Telegram debug mode if specified
+        if telegram_debug:
+            if "notifications" not in self.config:
+                self.config["notifications"] = {}
+            if "telegram" not in self.config["notifications"]:
+                self.config["notifications"]["telegram"] = {}
+            self.config["notifications"]["telegram"]["debug_mode"] = True
 
         # Setup logging
         self.logger = setup_logging(self.config)
@@ -145,6 +157,13 @@ class Monitor:
         if email_notifier.enabled:
             notifiers.append(email_notifier)
             self.logger.info("Email notifier initialized")
+
+        # Telegram notifier
+        telegram_notifier = TelegramNotifier(self.config, self.credential_manager)
+        if telegram_notifier.enabled:
+            notifiers.append(telegram_notifier)
+            mode_str = "DEBUG" if telegram_notifier.debug_mode else "REGULAR"
+            self.logger.info(f"Telegram notifier initialized ({mode_str} mode)")
 
         return notifiers
 

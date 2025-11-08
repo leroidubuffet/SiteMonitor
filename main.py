@@ -76,13 +76,13 @@ def setup_credentials():
     print("=" * 60 + "\n")
 
 
-def check_once(config_path: str, env_file: str = None):
+def check_once(config_path: str, env_file: str = None, telegram_debug: bool = False):
     """Run a single check and exit."""
     print("\n" + "=" * 60)
     print("InfoRuta Monitor - Single Check")
     print("=" * 60 + "\n")
 
-    monitor = Monitor(config_path, env_file)
+    monitor = Monitor(config_path, env_file, telegram_debug)
     monitor.perform_checks()
 
     # Display status
@@ -197,6 +197,12 @@ Examples:
         "--version", action="version", version="InfoRuta Monitor v1.0.0"
     )
 
+    parser.add_argument(
+        "--telegram-debug",
+        action="store_true",
+        help="Enable Telegram debug mode (notify on ALL checks, not just state changes)",
+    )
+
     args = parser.parse_args()
 
     # Handle special modes
@@ -209,7 +215,7 @@ Examples:
         return
 
     if args.check_once:
-        check_once(args.config, args.env_file)
+        check_once(args.config, args.env_file, args.telegram_debug)
         return
 
     # Start monitoring
@@ -229,7 +235,7 @@ Examples:
     """)
 
     try:
-        monitor = Monitor(args.config, args.env_file)
+        monitor = Monitor(args.config, args.env_file, args.telegram_debug)
         monitor.start()
     except KeyboardInterrupt:
         print("\n\nMonitoring stopped by user")
