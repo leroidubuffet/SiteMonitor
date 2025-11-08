@@ -189,8 +189,20 @@ class UptimeChecker(BaseChecker):
             hostname = parsed.hostname
             port = parsed.port or 443
 
-            # Create SSL context
+            # Create SSL context with secure settings
             context = ssl.create_default_context()
+
+            # Enforce strict certificate validation
+            context.check_hostname = True
+            context.verify_mode = ssl.CERT_REQUIRED
+
+            # Set minimum TLS version to 1.2 (disable older insecure versions)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+
+            # Disable weak ciphers
+            context.set_ciphers(
+                "ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:!aNULL:!MD5:!DSS"
+            )
 
             # Connect and get certificate
             with socket.create_connection((hostname, port), timeout=10) as sock:

@@ -1,11 +1,14 @@
 """Authentication checker for InfoRuta login verification."""
 
+import ipaddress
 import re
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 import httpx
+from bs4 import BeautifulSoup
 
 from ..storage.credential_manager import CredentialManager
 from .base_checker import BaseChecker, CheckResult, CheckStatus
@@ -39,6 +42,82 @@ class AuthChecker(BaseChecker):
     def get_check_type(self) -> str:
         """Return the check type identifier."""
         return "authentication"
+
+    def _validate_url(self, url: str) -> bool:
+        """
+        Validate URL to prevent SSRF attacks.
+
+        Args:
+            url: URL to validate
+
+        Returns:
+            True if URL is safe
+
+        Raises:
+            ValueError: If URL is potentially unsafe
+        """
+        parsed = urlparse(url)
+
+        # Only allow http and https schemes
+        if parsed.scheme not in ["http", "https"]:
+            raise ValueError(
+                f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed."
+            )
+
+        if not parsed.hostname:
+            raise ValueError("URL must have a valid hostname")
+
+        # Block localhost and loopback addresses
+        if parsed.hostname.lower() in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
+            raise ValueError("Localhost addresses are not allowed")
+
+        # Try to resolve hostname and check if it's a private IP
+        try:
+            # Check if hostname is an IP address
+            ip = ipaddress.ip_address(parsed.hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                raise ValueError(f"Private/internal IP addresses are not allowed: {ip}")
+        except ValueError as e:
+            # Not an IP address, which is fine - it's a hostname
+            # But we still need to check for common cloud metadata endpoints
+            if parsed.hostname.startswith("169.254"):
+                raise ValueError(
+                    "Cloud metadata IP ranges (169.254.x.x) are not allowed"
+                )
+            if parsed.hostname.lower() in [
+                "metadata.google.internal",
+                "metadata",
+                "instance-data",
+            ]:
+                raise ValueError("Cloud metadata hostnames are not allowed")
+
+        # Block common private IP ranges in hostname
+        if any(
+            parsed.hostname.startswith(prefix)
+            for prefix in [
+                "10.",
+                "172.16.",
+                "172.17.",
+                "172.18.",
+                "172.19.",
+                "172.20.",
+                "172.21.",
+                "172.22.",
+                "172.23.",
+                "172.24.",
+                "172.25.",
+                "172.26.",
+                "172.27.",
+                "172.28.",
+                "172.29.",
+                "172.30.",
+                "172.31.",
+                "192.168.",
+            ]
+        ):
+            raise ValueError(f"Private IP ranges are not allowed: {parsed.hostname}")
+
+        return True
 
     def check(self, site_name: Optional[str] = None) -> CheckResult:
         """
@@ -179,6 +258,16 @@ class AuthChecker(BaseChecker):
             # Construct login URL
             login_url = base_url.rstrip("/") + "/" + login_endpoint.lstrip("/")
 
+            # Validate URL to prevent SSRF attacks
+            try:
+                self._validate_url(login_url)
+            except ValueError as e:
+                self.logger.error(f"URL validation failed: {e}")
+                return {
+                    "success": False,
+                    "error": f"Invalid URL: {str(e)}",
+                }
+
             # First, get the login page to extract any necessary tokens/viewstate
             self.logger.debug(f"Fetching login page: {login_url}")
             login_page_response = self.client.get(login_url)
@@ -309,7 +398,8 @@ class AuthChecker(BaseChecker):
 
     def _extract_form_data(self, html: str) -> Dict[str, str]:
         """
-        Extract ASP.NET form data from HTML.
+        Extract ASP.NET form data from HTML using BeautifulSoup.
+        This prevents ReDoS (Regular Expression Denial of Service) attacks.
 
         Args:
             html: HTML content
@@ -319,34 +409,38 @@ class AuthChecker(BaseChecker):
         """
         form_data = {}
 
-        # Extract ViewState
-        viewstate_match = re.search(
-            r'<input[^>]*name="__VIEWSTATE"[^>]*value="([^"]*)"', html
-        )
-        if viewstate_match:
-            form_data["__VIEWSTATE"] = viewstate_match.group(1)
+        try:
+            # Parse HTML with BeautifulSoup (secure against ReDoS)
+            soup = BeautifulSoup(html, "lxml")
 
-        # Extract ViewStateGenerator
-        viewstate_gen_match = re.search(
-            r'<input[^>]*name="__VIEWSTATEGENERATOR"[^>]*value="([^"]*)"', html
-        )
-        if viewstate_gen_match:
-            form_data["__VIEWSTATEGENERATOR"] = viewstate_gen_match.group(1)
+            # Extract ViewState
+            viewstate = soup.find("input", {"name": "__VIEWSTATE"})
+            if viewstate and viewstate.get("value"):
+                form_data["__VIEWSTATE"] = viewstate["value"]
 
-        # Extract EventValidation
-        event_val_match = re.search(
-            r'<input[^>]*name="__EVENTVALIDATION"[^>]*value="([^"]*)"', html
-        )
-        if event_val_match:
-            form_data["__EVENTVALIDATION"] = event_val_match.group(1)
+            # Extract ViewStateGenerator
+            viewstate_gen = soup.find("input", {"name": "__VIEWSTATEGENERATOR"})
+            if viewstate_gen and viewstate_gen.get("value"):
+                form_data["__VIEWSTATEGENERATOR"] = viewstate_gen["value"]
 
-        self.logger.debug(f"Extracted {len(form_data)} form fields")
+            # Extract EventValidation
+            event_val = soup.find("input", {"name": "__EVENTVALIDATION"})
+            if event_val and event_val.get("value"):
+                form_data["__EVENTVALIDATION"] = event_val["value"]
+
+            self.logger.debug(
+                f"Extracted {len(form_data)} form fields using BeautifulSoup"
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to parse HTML with BeautifulSoup: {e}")
+            # Fall back to empty form_data rather than using unsafe regex
+
         return form_data
 
     def _auto_detect_login_fields(self, html: str) -> Dict[str, str]:
         """
         Auto-detect username, password, and submit button fields from HTML.
-        Uses logic from debug_login.py to find form fields.
+        Uses BeautifulSoup instead of regex to prevent ReDoS attacks.
 
         Args:
             html: HTML content of login page
@@ -356,49 +450,52 @@ class AuthChecker(BaseChecker):
         """
         detected = {}
 
-        # Find all input fields in the form
-        inputs = re.findall(r"<input[^>]*>", html, re.IGNORECASE)
-        form_fields = {}
+        try:
+            # Parse HTML with BeautifulSoup (secure against ReDoS)
+            soup = BeautifulSoup(html, "lxml")
 
-        for inp in inputs:
-            name_match = re.search(r'name=["\']([^"\']+)["\']', inp)
-            value_match = re.search(r'value=["\']([^"\']*)["\']', inp)
-            type_match = re.search(r'type=["\']([^"\']+)["\']', inp)
+            # Find all input fields in the form
+            form_fields = {}
+            for inp in soup.find_all("input"):
+                name = inp.get("name")
+                if name:
+                    value = inp.get("value", "")
+                    field_type = inp.get("type", "text")
+                    form_fields[name] = {"value": value, "type": field_type}
 
-            if name_match:
-                name = name_match.group(1)
-                value = value_match.group(1) if value_match else ""
-                field_type = type_match.group(1) if type_match else "text"
-                form_fields[name] = {"value": value, "type": field_type}
+            # Look for username field
+            username_fields = [
+                k
+                for k in form_fields.keys()
+                if "user" in k.lower() or "usuario" in k.lower() or "login" in k.lower()
+            ]
+            if username_fields:
+                detected["username_field"] = username_fields[0]
 
-        # Look for username field
-        username_fields = [
-            k
-            for k in form_fields.keys()
-            if "user" in k.lower() or "usuario" in k.lower() or "login" in k.lower()
-        ]
-        if username_fields:
-            detected["username_field"] = username_fields[0]
+            # Look for password field
+            password_fields = [
+                k
+                for k in form_fields.keys()
+                if "pass" in k.lower() or "pwd" in k.lower() or "clave" in k.lower()
+            ]
+            if password_fields:
+                detected["password_field"] = password_fields[0]
 
-        # Look for password field
-        password_fields = [
-            k
-            for k in form_fields.keys()
-            if "pass" in k.lower() or "pwd" in k.lower() or "clave" in k.lower()
-        ]
-        if password_fields:
-            detected["password_field"] = password_fields[0]
+            # Look for submit button
+            button_fields = [
+                k
+                for k in form_fields.keys()
+                if form_fields[k]["type"].lower() in ["submit", "button"]
+                and (
+                    "btn" in k.lower() or "submit" in k.lower() or "entrar" in k.lower()
+                )
+            ]
+            if button_fields:
+                detected["submit_field"] = button_fields[0]
+                detected["submit_value"] = form_fields[button_fields[0]]["value"]
 
-        # Look for submit button
-        button_fields = [
-            k
-            for k in form_fields.keys()
-            if form_fields[k]["type"].lower() in ["submit", "button"]
-            and ("btn" in k.lower() or "submit" in k.lower() or "entrar" in k.lower())
-        ]
-        if button_fields:
-            detected["submit_field"] = button_fields[0]
-            detected["submit_value"] = form_fields[button_fields[0]]["value"]
+        except Exception as e:
+            self.logger.warning(f"Failed to auto-detect login fields: {e}")
 
         return detected
 

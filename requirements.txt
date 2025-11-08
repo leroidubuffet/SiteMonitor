@@ -13,6 +13,10 @@ python-dotenv==1.0.1  # Updated to latest stable version
 PyYAML==6.0.2  # Updated to latest stable version
 pydantic==2.10.3  # Updated to latest v2 - fixes CVE-2021-29510 and provides better performance
 
+# HTML Parsing (secure alternative to regex)
+beautifulsoup4==4.12.3  # Secure HTML parsing to prevent ReDoS attacks
+lxml==5.1.0  # Fast XML/HTML parser backend for BeautifulSoup
+
 # Logging & Monitoring
 coloredlogs==15.0.1  # Colored console output
 colorama==0.4.6  # Cross-platform colored terminal text
