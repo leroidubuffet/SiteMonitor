@@ -171,6 +171,7 @@ class Monitor:
         """Perform all enabled checks for all sites."""
         self.logger.info(f"Starting monitoring checks for {len(self.sites)} site(s)...")
         total_results = 0
+        all_results_for_batch = []  # Collect all results for batch notification
 
         # Loop through each site
         for site_config in self.sites:
@@ -194,8 +195,14 @@ class Monitor:
             checkers = self._initialize_checkers_for_site(site_config)
 
             # Perform checks for this site
-            results = self._perform_site_checks(site_name, site_config, checkers)
+            results = self._perform_site_checks(
+                site_name, site_config, checkers, all_results_for_batch
+            )
             total_results += len(results)
+
+        # Send batch notifications if we have results
+        if all_results_for_batch:
+            self._send_batch_notifications(all_results_for_batch)
 
         # Log summary
         self.logger.info(
@@ -207,7 +214,11 @@ class Monitor:
             self._log_metrics_summary()
 
     def _perform_site_checks(
-        self, site_name: str, site_config: Dict[str, Any], checkers: Dict[str, Any]
+        self,
+        site_name: str,
+        site_config: Dict[str, Any],
+        checkers: Dict[str, Any],
+        batch_results: List = None,
     ) -> List[CheckResult]:
         """
         Perform checks for a specific site.
@@ -216,6 +227,7 @@ class Monitor:
             site_name: Name of the site
             site_config: Site configuration
             checkers: Dictionary of checkers for this site
+            batch_results: Optional list to collect results for batch notification
 
         Returns:
             List of check results
@@ -269,8 +281,28 @@ class Monitor:
                     # Record in state manager (with site name)
                     self.state_manager.record_result(result, site_name)
 
-                    # Send notifications (with site context)
-                    self._send_notifications(result, previous_success, site_name)
+                    # Collect for batch notifications if batch_results list provided
+                    if batch_results is not None:
+                        # Get previous result for notifiers to check state changes
+                        previous_result = None
+                        if previous_result_dict:
+                            from .checkers import CheckStatus
+
+                            status_str = previous_result_dict.get(
+                                "status", "SUCCESS"
+                            ).upper()
+                            previous_result = CheckResult(
+                                check_type=previous_result_dict.get("check_type", ""),
+                                timestamp=datetime.fromisoformat(
+                                    previous_result_dict.get("timestamp", "")
+                                ),
+                                status=CheckStatus[status_str],
+                                success=previous_result_dict.get("success", True),
+                            )
+                        batch_results.append((result, previous_result, site_name))
+
+                    # Always send to console immediately (non-batch)
+                    self._send_console_notification(result, site_name)
 
                 except Exception as e:
                     self.logger.error(
@@ -313,17 +345,115 @@ class Monitor:
                 # Always show in console
                 if isinstance(notifier, ConsoleNotifier):
                     notifier.notify(result, site_name=site_name)
-                # Only send email/other notifications on state changes
-                elif is_state_change or (
-                    result.is_failure
-                    and self.state_manager.get_consecutive_failures(
+                # For other notifiers, check if they want this notification
+                # (TelegramNotifier in debug mode will return True from should_notify)
+                else:
+                    # Get previous result for state change detection
+                    previous_result_dict = self.state_manager.get_last_result(
                         result.check_type, site_name
                     )
-                    == 1
-                ):
-                    notifier.notify(result, site_name=site_name)
+                    previous_result = None
+                    if previous_result_dict:
+                        # Reconstruct a minimal CheckResult for comparison
+                        from .checkers import CheckStatus
+
+                        status_str = previous_result_dict.get(
+                            "status", "SUCCESS"
+                        ).upper()
+                        previous_result = CheckResult(
+                            check_type=previous_result_dict.get("check_type", ""),
+                            timestamp=datetime.fromisoformat(
+                                previous_result_dict.get("timestamp", "")
+                            ),
+                            status=CheckStatus[status_str],
+                            success=previous_result_dict.get("success", True),
+                        )
+
+                    # Let the notifier decide if it should notify
+                    # (handles debug mode, state changes, etc.)
+                    if notifier.should_notify(result, previous_result):
+                        notifier.notify(result, previous_result, site_name=site_name)
             except Exception as e:
-                self.logger.error(f"[{site_name}] Failed to send notification: {e}")
+                self.logger.error(
+                    f"[{site_name}] Failed to send notification: {e}", exc_info=True
+                )
+
+    def _send_console_notification(self, result: CheckResult, site_name: str):
+        """Send notification to console only."""
+        for notifier in self.notifiers:
+            if isinstance(notifier, ConsoleNotifier):
+                try:
+                    notifier.notify(result, site_name=site_name)
+                except Exception as e:
+                    self.logger.error(f"Console notification failed: {e}")
+                break
+
+    def _send_batch_notifications(self, batch_results: List):
+        """
+        Send batch notifications to all enabled notifiers (except console).
+
+        Args:
+            batch_results: List of (result, previous_result, site_name) tuples
+        """
+        for notifier in self.notifiers:
+            # Skip console (already notified individually)
+            if isinstance(notifier, ConsoleNotifier):
+                continue
+
+            try:
+                # Filter results that this notifier wants to be notified about
+                filtered_results = []
+                for result, previous_result, site_name in batch_results:
+                    if notifier.should_notify(result, previous_result):
+                        filtered_results.append((result, previous_result, site_name))
+
+                # Send batch if we have results to notify
+                if filtered_results:
+                    # Check if notifier supports batch notifications
+                    if hasattr(notifier, "batch_enabled") and notifier.batch_enabled:
+                        notifier.notify_batch(filtered_results)
+                    else:
+                        # Fall back to individual notifications
+                        for result, previous_result, site_name in filtered_results:
+                            notifier.notify(
+                                result, previous_result, site_name=site_name
+                            )
+            except Exception as e:
+                self.logger.error(
+                    f"Batch notification failed for {notifier.__class__.__name__}: {e}",
+                    exc_info=True,
+                )
+
+    def _send_startup_notification(self, interval_minutes: int):
+        """Send a startup notification to Telegram (if enabled and not in debug mode)."""
+        for notifier in self.notifiers:
+            # Only send to Telegram notifier
+            if notifier.__class__.__name__ == "TelegramNotifier":
+                # Only send startup notification in regular mode (not debug mode)
+                if not hasattr(notifier, "debug_mode") or not notifier.debug_mode:
+                    try:
+                        # Create startup message
+                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        site_list = "\n".join(
+                            [
+                                f"  • {site.get('name', 'Unknown')}"
+                                for site in self.sites
+                            ]
+                        )
+
+                        message = (
+                            f"🚀 *Monitor Started*\n\n"
+                            f"📊 Monitoring {len(self.sites)} sites:\n{site_list}\n\n"
+                            f"⏱ Check interval: `{interval_minutes} minutes`\n"
+                            f"🕐 Started at: `{timestamp}`\n\n"
+                            f"_Regular mode: You'll only receive alerts for failures and recoveries_"
+                        )
+
+                        # Send via Telegram API directly
+                        notifier._send_telegram_message(message)
+                        self.logger.info("Startup notification sent to Telegram")
+                    except Exception as e:
+                        self.logger.error(f"Failed to send startup notification: {e}")
 
     def _log_metrics_summary(self):
         """Log metrics summary."""
@@ -377,6 +507,9 @@ class Monitor:
         # Perform initial check
         self.logger.info("Performing initial check...")
         self.perform_checks()
+
+        # Send startup notification
+        self._send_startup_notification(interval_minutes)
 
         self.logger.info(f"Monitor started - checking every {interval_minutes} minutes")
         self.logger.info("Press Ctrl+C to stop")
@@ -466,11 +599,8 @@ Current Status:
         """Get current monitor status."""
         return {
             "running": self.running,
-            "checkers": list(self.checkers.keys()),
+            "sites": [site.get("name", "Unknown") for site in self.sites],
             "notifiers": [n.__class__.__name__ for n in self.notifiers],
             "metrics": self.metrics_collector.get_all_metrics_summary(),
             "state": self.state_manager.get_summary(),
-            "circuit_breaker": self.circuit_breaker.get_state()
-            if self.circuit_breaker
-            else None,
         }
