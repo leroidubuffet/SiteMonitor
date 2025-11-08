@@ -221,7 +221,7 @@ Examples:
     # Start monitoring
     print("""
     ╔═══════════════════════════════════════════════════════╗
-    ║           Vialidad Website Monitor v1.0.0             ║
+    ║           Vialidad Website Monitor v1.0.1             ║
     ║                                                       ║
     ║  Monitoring:                                          ║
     ║   https://inforuta-rce.es/                            ║
@@ -230,6 +230,7 @@ Examples:
     ║   https://vialidad.acpofiteco.com/                    ║
     ║   https://www.fomento-vi.es/                          ║
     ║  Interval: Every 15 minutes                           ║
+    ║  Telegram enabled: Yes                                ║
     ║  Press Ctrl+C to stop                                 ║
     ╚═══════════════════════════════════════════════════════╝
     """)
