@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import tempfile
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -88,7 +90,10 @@ class StateManager:
 
     def save_state(self) -> bool:
         """
-        Save state to file.
+        Save state to file using atomic write.
+
+        Uses write-to-temp-then-rename pattern to prevent corruption
+        if the program crashes mid-write.
 
         Returns:
             True if saved successfully
@@ -100,12 +105,36 @@ class StateManager:
             # Prepare state for JSON serialization
             state_to_save = self._prepare_for_serialization(self.state)
 
-            # Write to file
-            with open(self.state_file, "w") as f:
-                json.dump(state_to_save, f, indent=2, default=str)
+            # Atomic write: write to temporary file, then rename
+            # This ensures either the old file or new file exists, never corrupted partial file
+            temp_fd, temp_path = tempfile.mkstemp(
+                dir=self.state_file.parent,
+                prefix=f".{self.state_file.name}.",
+                suffix=".tmp"
+            )
 
-            self.logger.debug(f"Saved state to {self.state_file}")
-            return True
+            try:
+                # Write to temporary file
+                with os.fdopen(temp_fd, 'w') as f:
+                    json.dump(state_to_save, f, indent=2, default=str)
+                    # Ensure data is written to disk
+                    f.flush()
+                    os.fsync(f.fileno())
+
+                # Atomically replace old file with new file
+                # On POSIX systems, rename() is atomic
+                os.replace(temp_path, str(self.state_file))
+
+                self.logger.debug(f"Saved state to {self.state_file} (atomic write)")
+                return True
+
+            except Exception as write_error:
+                # Clean up temp file if write failed
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass  # Temp file already deleted, ignore
+                raise write_error
 
         except Exception as e:
             self.logger.error(f"Failed to save state: {e}")

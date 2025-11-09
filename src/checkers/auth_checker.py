@@ -278,6 +278,13 @@ class AuthChecker(BaseChecker):
                     "error": f"Failed to load login page: HTTP {login_page_response.status_code}",
                 }
 
+            # Check response size before parsing (prevent memory exhaustion)
+            if not self._check_response_size(login_page_response, self.MAX_HTML_PARSE_SIZE):
+                return {
+                    "success": False,
+                    "error": "Login page response too large (possible attack or misconfiguration)",
+                }
+
             # Extract ASP.NET ViewState and other form fields if present
             form_data = self._extract_form_data(login_page_response.text)
 
@@ -322,6 +329,13 @@ class AuthChecker(BaseChecker):
                     "Origin": base_url.rstrip("/"),
                 },
             )
+
+            # Check response size before parsing (prevent memory exhaustion)
+            if not self._check_response_size(login_response, self.MAX_HTML_PARSE_SIZE):
+                return {
+                    "success": False,
+                    "error": "Login response too large (possible attack or misconfiguration)",
+                }
 
             # Check for successful login indicators (site-specific or global)
             success_indicators = auth_config.get(
@@ -398,14 +412,20 @@ class AuthChecker(BaseChecker):
 
     def _extract_form_data(self, html: str) -> Dict[str, str]:
         """
-        Extract ASP.NET form data from HTML using BeautifulSoup.
+        Extract form data and CSRF tokens from HTML using BeautifulSoup.
         This prevents ReDoS (Regular Expression Denial of Service) attacks.
+
+        Supports multiple frameworks:
+        - ASP.NET: __VIEWSTATE, __VIEWSTATEGENERATOR, __EVENTVALIDATION
+        - Django: csrfmiddlewaretoken
+        - Rails: authenticity_token
+        - Generic: _csrf_token, csrf_token, _token
 
         Args:
             html: HTML content
 
         Returns:
-            Dictionary of form fields
+            Dictionary of form fields including CSRF tokens
         """
         form_data = {}
 
@@ -413,23 +433,42 @@ class AuthChecker(BaseChecker):
             # Parse HTML with BeautifulSoup (secure against ReDoS)
             soup = BeautifulSoup(html, "lxml")
 
-            # Extract ViewState
+            # ASP.NET tokens
             viewstate = soup.find("input", {"name": "__VIEWSTATE"})
             if viewstate and viewstate.get("value"):
                 form_data["__VIEWSTATE"] = viewstate["value"]
 
-            # Extract ViewStateGenerator
             viewstate_gen = soup.find("input", {"name": "__VIEWSTATEGENERATOR"})
             if viewstate_gen and viewstate_gen.get("value"):
                 form_data["__VIEWSTATEGENERATOR"] = viewstate_gen["value"]
 
-            # Extract EventValidation
             event_val = soup.find("input", {"name": "__EVENTVALIDATION"})
             if event_val and event_val.get("value"):
                 form_data["__EVENTVALIDATION"] = event_val["value"]
 
+            # Django CSRF token
+            csrf_django = soup.find("input", {"name": "csrfmiddlewaretoken"})
+            if csrf_django and csrf_django.get("value"):
+                form_data["csrfmiddlewaretoken"] = csrf_django["value"]
+
+            # Rails authenticity token
+            csrf_rails = soup.find("input", {"name": "authenticity_token"})
+            if csrf_rails and csrf_rails.get("value"):
+                form_data["authenticity_token"] = csrf_rails["value"]
+
+            # Generic CSRF tokens (various names)
+            for csrf_name in ["_csrf_token", "csrf_token", "_token", "csrf"]:
+                csrf_field = soup.find("input", {"name": csrf_name})
+                if csrf_field and csrf_field.get("value"):
+                    form_data[csrf_name] = csrf_field["value"]
+
+            # Also check for CSRF in meta tags (common in SPAs)
+            csrf_meta = soup.find("meta", {"name": "csrf-token"})
+            if csrf_meta and csrf_meta.get("content"):
+                form_data["_csrf_token_meta"] = csrf_meta["content"]
+
             self.logger.debug(
-                f"Extracted {len(form_data)} form fields using BeautifulSoup"
+                f"Extracted {len(form_data)} form fields (including CSRF tokens)"
             )
         except Exception as e:
             self.logger.warning(f"Failed to parse HTML with BeautifulSoup: {e}")

@@ -72,6 +72,10 @@ class CheckResult:
 class BaseChecker(ABC):
     """Abstract base class for all health checkers."""
 
+    # Security limits
+    MAX_RESPONSE_SIZE = 10 * 1024 * 1024  # 10MB max response size
+    MAX_HTML_PARSE_SIZE = 5 * 1024 * 1024  # 5MB max for HTML parsing
+
     def __init__(self, config: Dict[str, Any], client: Optional[httpx.Client] = None):
         """
         Initialize the checker.
@@ -173,6 +177,42 @@ class BaseChecker(ABC):
         if self._client:
             self._client.close()
             self._client = None
+
+    def _check_response_size(self, response: httpx.Response, max_size: int = None) -> bool:
+        """
+        Check if response size is within acceptable limits.
+
+        Args:
+            response: HTTPX response object
+            max_size: Maximum allowed size in bytes (default: MAX_RESPONSE_SIZE)
+
+        Returns:
+            True if size is acceptable, False otherwise
+        """
+        max_size = max_size or self.MAX_RESPONSE_SIZE
+
+        # Check Content-Length header if present
+        content_length = response.headers.get("content-length")
+        if content_length:
+            try:
+                size = int(content_length)
+                if size > max_size:
+                    self.logger.warning(
+                        f"Response size ({size} bytes) exceeds limit ({max_size} bytes)"
+                    )
+                    return False
+            except ValueError:
+                pass  # Invalid Content-Length, continue
+
+        # Check actual content size
+        content_size = len(response.content)
+        if content_size > max_size:
+            self.logger.warning(
+                f"Response content ({content_size} bytes) exceeds limit ({max_size} bytes)"
+            )
+            return False
+
+        return True
 
     def __enter__(self):
         """Context manager entry."""
