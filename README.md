@@ -231,9 +231,11 @@ The monitor includes Telegram bot integration with two notification modes for fl
 
 #### Regular Mode (Default)
 Notifies only on important state changes:
+- Monitor startup (when the program starts)
 - Site downtime (when a site goes down)
 - Site recovery (when a site comes back online)
 - Authentication failures (login issues)
+- Monitor shutdown (when the program stops, with final statistics)
 
 This mode reduces notification fatigue by only alerting on actionable events.
 
@@ -366,6 +368,34 @@ notifications:
 ### Message Formats
 
 The Telegram notifier sends rich formatted messages with emojis:
+
+**Startup Message:**
+```
+🚀 Monitor Started
+
+📊 Monitoring 5 sites:
+  • AEMET
+  • DGT Traffic Cameras
+  • InfoRuta RCE
+  • Vialidad ACP
+  • Fomento VI
+
+⏱ Check interval: 15 minutes
+🕐 Started at: 2025-11-08 14:00:00
+
+Regular mode: You'll only receive alerts for failures and recoveries
+```
+
+**Shutdown Message:**
+```
+🛑 Monitor Stopped
+
+📊 Monitoring 5 sites
+⏹ Total checks performed: 250
+📈 Overall availability: 99.5%
+
+🕐 Stopped at: 2025-11-08 18:00:00
+```
 
 **Success Message:**
 ```

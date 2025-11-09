@@ -544,9 +544,42 @@ class Monitor:
 
         self.logger.info("Monitor stopped")
 
+    def _send_shutdown_notification(self):
+        """Send a shutdown notification to Telegram (if enabled)."""
+        for notifier in self.notifiers:
+            # Only send to Telegram notifier
+            if notifier.__class__.__name__ == "TelegramNotifier":
+                try:
+                    # Get final stats
+                    metrics_summary = self.metrics_collector.get_all_metrics_summary()
+                    availability = metrics_summary.get("availability", {})
+                    total_checks = availability.get("total_checks", 0)
+                    availability_pct = availability.get("availability_percentage", 0)
+
+                    # Create shutdown message
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                    message = (
+                        f"🛑 *Monitor Stopped*\n\n"
+                        f"📊 Monitoring {len(self.sites)} sites\n"
+                        f"⏹ Total checks performed: `{total_checks}`\n"
+                        f"📈 Overall availability: `{availability_pct:.2f}%`\n\n"
+                        f"🕐 Stopped at: `{timestamp}`"
+                    )
+
+                    # Send via Telegram API directly
+                    notifier._send_telegram_message(message)
+                    self.logger.info("Shutdown notification sent to Telegram")
+                except Exception as e:
+                    self.logger.error(f"Failed to send shutdown notification: {e}")
+
     def _handle_shutdown(self, signum=None, frame=None):
         """Handle shutdown signal."""
         self.logger.info("Shutdown signal received")
+
+        # Send shutdown notification before stopping
+        self._send_shutdown_notification()
+
         self.stop()
         sys.exit(0)
 
