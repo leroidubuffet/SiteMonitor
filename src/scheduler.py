@@ -296,6 +296,11 @@ class MonitorScheduler:
         Args:
             wait: Wait for running jobs to complete
         """
+        # Check if scheduler is running before shutting down
+        if not self.scheduler.running:
+            self.logger.debug("Scheduler is not running, skipping shutdown")
+            return
+
         self.logger.info("Shutting down scheduler...")
         self.scheduler.shutdown(wait=wait)
         self.logger.info("Scheduler shut down")

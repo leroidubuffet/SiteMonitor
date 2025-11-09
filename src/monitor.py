@@ -532,9 +532,15 @@ class Monitor:
         if self.scheduler:
             self.scheduler.shutdown()
 
-        # Clean up checkers
-        for checker in self.checkers.values():
-            checker.cleanup()
+        # Clean up checkers (if they exist as instance variables)
+        # Note: In multi-site architecture, checkers are created per-check-cycle
+        # and automatically cleaned up when they go out of scope
+        if hasattr(self, 'checkers') and self.checkers:
+            for checker in self.checkers.values():
+                try:
+                    checker.cleanup()
+                except Exception as e:
+                    self.logger.error(f"Error cleaning up checker: {e}")
 
         # Save final state
         self.state_manager.save_state()
