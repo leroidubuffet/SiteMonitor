@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from ..checkers.base_checker import CheckResult
 from ..storage.credential_manager import CredentialManager
+from ..utils import sanitize_html, sanitize_email_header
 from .base_notifier import BaseNotifier
 
 
@@ -201,6 +202,11 @@ class EmailNotifier(BaseNotifier):
             "url", "Site"
         )
 
+        # Sanitize all user-controlled data for HTML
+        safe_site = sanitize_html(site_identifier)
+        safe_check_type = sanitize_html(result.check_type.upper())
+        safe_status = sanitize_html(result.status.value.upper())
+
         # Determine status color
         status_color = {
             "success": "#28a745",
@@ -229,11 +235,11 @@ class EmailNotifier(BaseNotifier):
             <div class="container">
                 <div class="header">
                     <h2>InfoRuta Monitor Alert</h2>
-                    <h3>{result.check_type.upper()} - {result.status.value.upper()}</h3>
+                    <h3>{safe_check_type} - {safe_status}</h3>
                 </div>
 
                 <div class="content">
-                    <p><strong>Site:</strong> {site_identifier}</p>
+                    <p><strong>Site:</strong> {safe_site}</p>
                     <p><strong>Check Time:</strong> {result.timestamp.strftime("%Y-%m-%d %H:%M:%S")}</p>
                     <p><strong>Response Time:</strong> {result.response_time_ms:.0f}ms</p>
         """
@@ -242,16 +248,18 @@ class EmailNotifier(BaseNotifier):
             html += f"<p><strong>HTTP Status:</strong> {result.status_code}</p>"
 
         if result.error_message:
+            safe_error = sanitize_html(result.error_message)
             html += f"""
                 <div style="background-color: #f8d7da; color: #721c24; padding: 10px; margin-top: 10px;">
-                    <strong>Error:</strong> {result.error_message}
+                    <strong>Error:</strong> {safe_error}
                 </div>
             """
 
         if result.warning_message:
+            safe_warning = sanitize_html(result.warning_message)
             html += f"""
                 <div style="background-color: #fff3cd; color: #856404; padding: 10px; margin-top: 10px;">
-                    <strong>Warning:</strong> {result.warning_message}
+                    <strong>Warning:</strong> {safe_warning}
                 </div>
             """
 
@@ -264,11 +272,15 @@ class EmailNotifier(BaseNotifier):
                     <table>
             """
             for key, value in result.metrics.items():
+                safe_key = sanitize_html(str(key))
                 if isinstance(value, dict):
                     for sub_key, sub_value in value.items():
-                        html += f"<tr><td>{key}.{sub_key}</td><td>{sub_value}</td></tr>"
+                        safe_sub_key = sanitize_html(str(sub_key))
+                        safe_sub_value = sanitize_html(str(sub_value))
+                        html += f"<tr><td>{safe_key}.{safe_sub_key}</td><td>{safe_sub_value}</td></tr>"
                 else:
-                    html += f"<tr><td>{key}</td><td>{value}</td></tr>"
+                    safe_value = sanitize_html(str(value))
+                    html += f"<tr><td>{safe_key}</td><td>{safe_value}</td></tr>"
             html += "</table>"
 
         html += f"""
@@ -381,12 +393,15 @@ This is an automated monitoring alert
 
                 for result in section_results:
                     details = result.error_message or result.warning_message or "OK"
+                    # Sanitize all user-controlled data
+                    safe_check_type = sanitize_html(result.check_type)
+                    safe_details = sanitize_html(details)
                     html += f"""
                         <tr>
-                            <td>{result.check_type}</td>
+                            <td>{safe_check_type}</td>
                             <td>{result.timestamp.strftime("%H:%M:%S")}</td>
                             <td>{result.response_time_ms:.0f}ms</td>
-                            <td>{details}</td>
+                            <td>{safe_details}</td>
                         </tr>
                     """
 
@@ -445,11 +460,18 @@ Summary:
             True if sent successfully
         """
         try:
+            # Sanitize email headers to prevent header injection
+            safe_subject = sanitize_email_header(subject)
+            safe_from = sanitize_email_header(self.email_config["from_address"])
+            safe_to_addresses = [
+                sanitize_email_header(addr) for addr in self.email_config["to_addresses"]
+            ]
+
             # Create message
             msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = self.email_config["from_address"]
-            msg["To"] = ", ".join(self.email_config["to_addresses"])
+            msg["Subject"] = safe_subject
+            msg["From"] = safe_from
+            msg["To"] = ", ".join(safe_to_addresses)
 
             # Attach parts
             text_part = MIMEText(text_content, "plain")
