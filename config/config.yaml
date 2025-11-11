@@ -84,7 +84,6 @@ sites:
 
 retry:
   max_attempts: 3
-  backoff_factor: 3
   max_backoff_seconds: 60
 
 circuit_breaker:
