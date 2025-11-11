@@ -85,7 +85,7 @@ python3 main.py
 
 ## Configuration
 
-The monitor is configured via `config/config.yaml`. 
+The monitor is configured via `config/config.yaml`.
 
 ### Multi-Site Structure
 ```yaml
@@ -151,6 +151,176 @@ circuit_breaker:
   failure_threshold: 5        # Open after 5 consecutive failures
   recovery_timeout_minutes: 30
 ```
+
+## Operational Modes
+
+The monitor supports different logging levels and notification modes to adapt to development, testing, and production environments.
+
+### Logging Levels
+
+Configure logging verbosity in `config/config.yaml`:
+
+```yaml
+logging:
+  level: INFO  # Change this to control verbosity
+```
+
+Available levels (from least to most verbose):
+
+#### ERROR - Production (Minimal)
+```yaml
+logging:
+  level: ERROR
+```
+- Only critical errors logged
+- Smallest log files
+- **Use when**: Stable production environment where you only need to know about failures
+
+**Example output:**
+```
+2025-11-11 10:30:15 - Monitor - ERROR - No sites configured in config.yaml
+2025-11-11 10:45:20 - AuthChecker - ERROR - Authentication failed: Invalid credentials
+```
+
+#### WARNING - Production (Standard)
+```yaml
+logging:
+  level: WARNING
+```
+- Errors + warnings about potential issues
+- Circuit breaker state changes, slow responses
+- **Use when**: Production environment with proactive monitoring
+
+**Example output:**
+```
+2025-11-11 10:30:15 - Monitor - WARNING - [AEMET] Circuit breaker is OPEN
+2025-11-11 10:30:20 - Monitor - ERROR - Console notification failed: Connection timeout
+```
+
+#### INFO - Production/Development (Default, Recommended)
+```yaml
+logging:
+  level: INFO
+```
+- Normal operations + warnings + errors
+- Balanced detail without overwhelming output
+- Shows check results, startup/shutdown, notifications sent
+- **Use when**: General production use, standard monitoring
+
+**Example output:**
+```
+2025-11-11 10:30:15 - Monitor - INFO - Multi-Site Monitor starting...
+2025-11-11 10:30:15 - Monitor - INFO - Configured to monitor 5 site(s)
+2025-11-11 10:30:16 - Monitor - INFO - [AEMET] Starting checks...
+2025-11-11 10:30:17 - AuthChecker - INFO - [InfoRuta RCE] Authentication successful in 1250ms
+2025-11-11 10:30:20 - Monitor - WARNING - [Vialidad ACP] Circuit breaker is OPEN
+```
+
+#### DEBUG - Development/Troubleshooting (Verbose)
+```yaml
+logging:
+  level: DEBUG
+```
+- Everything including internal implementation details
+- HTTP requests, form field detection, session cookies, state changes
+- Large log files, very detailed output
+- **Use when**: Initial setup, debugging configuration issues, troubleshooting authentication problems
+
+**Example output:**
+```
+2025-11-11 10:30:15 - Monitor - INFO - Multi-Site Monitor starting...
+2025-11-11 10:30:15 - Monitor - DEBUG - [AEMET] Uptime checker initialized
+2025-11-11 10:30:15 - Monitor - DEBUG - [InfoRuta RCE] Authentication checker initialized
+2025-11-11 10:30:16 - AuthChecker - DEBUG - Fetching login page: https://inforuta-rce.es/
+2025-11-11 10:30:17 - AuthChecker - DEBUG - Auto-detected login fields: username=txtUsuario, password=txtClave
+2025-11-11 10:30:17 - AuthChecker - DEBUG - Extracted 3 form fields (including CSRF tokens)
+2025-11-11 10:30:18 - AuthChecker - DEBUG - Submitting login credentials
+2025-11-11 10:30:19 - AuthChecker - DEBUG - [InfoRuta RCE] Stored 2 session cookies
+2025-11-11 10:30:19 - AuthChecker - INFO - [InfoRuta RCE] Authentication successful in 1250ms
+```
+
+### Development vs Production Configuration
+
+**Development/Testing Mode:**
+```yaml
+# config/config.yaml
+
+logging:
+  level: DEBUG          # Verbose logging for troubleshooting
+
+notifications:
+  telegram:
+    enabled: true
+    debug_mode: true    # Notify on EVERY check (every 15 minutes)
+
+  console:
+    enabled: true
+    colored_output: true
+
+circuit_breaker:
+  enabled: false        # Optional: disable to see all failures
+```
+
+**Production Mode (Recommended):**
+```yaml
+# config/config.yaml
+
+logging:
+  level: INFO           # Standard logging, not too verbose
+
+notifications:
+  telegram:
+    enabled: true
+    debug_mode: false   # Only notify on state changes (downtime/recovery)
+
+  email:
+    enabled: true       # Enable email for important alerts
+
+  console:
+    enabled: true
+    colored_output: true
+
+circuit_breaker:
+  enabled: true         # Prevent excessive checks to failing sites
+```
+
+### Switching Modes
+
+**Permanent Change** - Edit `config/config.yaml`:
+```yaml
+logging:
+  level: DEBUG  # or INFO, WARNING, ERROR
+
+telegram:
+  debug_mode: true  # or false
+```
+
+**Temporary Debug Mode** - Use command-line flag (doesn't modify config):
+```bash
+# Enable Telegram debug mode for this run only
+python3 main.py --telegram-debug
+
+# Test with single check in debug mode
+python3 main.py --check-once --telegram-debug
+```
+
+### Recommended Settings
+
+| Scenario | Logging Level | Telegram Mode | Circuit Breaker |
+|----------|---------------|---------------|-----------------|
+| **Initial Setup** | `DEBUG` | `debug_mode: true` | `disabled` |
+| **Testing Configuration** | `DEBUG` or `INFO` | `debug_mode: true` | `disabled` |
+| **Normal Production** | `INFO` | `debug_mode: false` | `enabled` |
+| **Stable Production** | `WARNING` | `debug_mode: false` | `enabled` |
+| **Troubleshooting Issues** | `DEBUG` | `debug_mode: true` | `enabled` |
+
+### Log File Locations
+
+Logs are written to:
+- `logs/monitor.log` - All logs at configured level
+- `logs/monitor.error.log` - Errors only (regardless of level setting)
+
+Both files use automatic rotation (max 10MB per file, keeps 5 backups).
 
 ## Usage Examples
 
@@ -619,6 +789,9 @@ To add a new site to monitor:
 - **Updated dependencies**: All packages are updated to latest secure versions
 - **No hardcoded secrets**: All sensitive data stored in environment variables
 - **Per-site credential isolation**: Each site uses its own credential key
+- **Production-grade security**: Response size limits, atomic file writes, XSS/injection prevention
+
+For detailed security documentation, see **[SECURITY.md](SECURITY.md)** and **[SECURITY_SUMMARY.md](SECURITY_SUMMARY.md)**.
 
 ## Troubleshooting
 
@@ -638,6 +811,7 @@ To add a new site to monitor:
 - Too many consecutive failures detected for that site
 - Other sites continue to be monitored
 - Wait 30 minutes or restart the monitor to reset
+- This feature is not preventing major resource consumption, so it can be dissabled
 
 **"SSL certificate verification failed"**
 - The site's certificate may be expired or invalid
@@ -727,6 +901,6 @@ For issues or questions, please contact the development team.
 
 ---
 
-**Version**: 2.0.0 (Multi-Site)  
-**Last Updated**: November 2025  
+**Version**: 2.0.0 (Multi-Site)
+**Last Updated**: November 2025
 **Author**: Ofiteco Development Team
