@@ -17,6 +17,7 @@ A comprehensive Python monitoring solution that performs uptime checks, authenti
 - **Persistent State**: Maintains check history and statistics for each site across restarts
 - **Auto-Detection**: Automatically detects login form fields (username, password, submit button)
 - **Flexible Configuration**: YAML-based configuration with environment variable support
+- **Heartbeat Checks**: Application-level health checks to ensure service availability with https://healthchecks.io/
 
 ## Monitored Sites
 
