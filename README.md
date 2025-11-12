@@ -611,6 +611,178 @@ Regular mode: You'll only receive alerts for failures and recoveries
 🕐 2025-11-08 14:30:15
 ```
 
+## External Monitoring with Healthchecks.io
+
+Healthchecks.io provides **external monitoring** to ensure your monitor is running correctly. It works by detecting when the monitor stops sending "heartbeat" pings.
+
+### Why Use External Monitoring?
+
+**Problem:** Your monitor can fail in ways that prevent it from sending alerts:
+- Process crashes
+- System runs out of memory
+- Process hangs (alive but frozen)
+- Server loses power
+- Network connectivity issues
+
+**Solution:** Healthchecks.io independently monitors your monitor. If it stops receiving heartbeat pings, you get notified.
+
+### How It Works
+
+1. **Your monitor sends periodic pings** to Healthchecks.io (every 15 minutes after each check cycle)
+2. **Healthchecks.io expects pings within a timeout** (e.g., 20 minutes)
+3. **If no ping received** → You get alerted via email/SMS/Slack/Telegram
+4. **This detects both crashes AND hangs** (process alive but not working)
+
+### Setup (5 Minutes, Free)
+
+#### Step 1: Create a Healthchecks.io Account
+
+1. Go to **https://healthchecks.io**
+2. Sign up for free account (no credit card required)
+3. Free tier includes: **20 checks**, email/SMS notifications
+
+#### Step 2: Create a Check
+
+1. Click **"Add Check"**
+2. Configure the check:
+   - **Name:** `Site Monitor Heartbeat`
+   - **Schedule:** `* * * * *` (every minute - we'll override this)
+   - **Grace Time:** `5 minutes`
+   - **Period:** `20 minutes` (15 min interval + 5 min grace)
+3. Click **"Save"**
+
+#### Step 3: Get Your Ping URL
+
+After creating the check, you'll see a ping URL like:
+```
+https://hc-ping.com/01234567-89ab-cdef-0123-456789abcdef
+```
+
+Copy this URL.
+
+#### Step 4: Add to Your Configuration
+
+Edit `config/.env` and add:
+```bash
+# Healthchecks.io ping URL
+HEALTHCHECK_PING_URL=https://hc-ping.com/your-unique-uuid-here
+```
+
+#### Step 5: Enable in Config (Already Enabled by Default)
+
+In `config/config.yaml`:
+```yaml
+healthcheck:
+  enabled: true  # Already set to true by default
+```
+
+#### Step 6: Configure Notifications
+
+In Healthchecks.io dashboard:
+1. Click **"Integrations"**
+2. Add your notification channels:
+   - Email ✅ (free)
+   - SMS ✅ (free, limited)
+   - Telegram ✅ (free)
+   - Slack ✅ (free)
+   - Discord ✅ (free)
+   - Webhook ✅ (free)
+
+### Testing
+
+#### Test that heartbeats are working:
+
+```bash
+# Run monitor briefly
+python3 main.py --check-once
+
+# Check Healthchecks.io dashboard
+# You should see "Last Ping: a few seconds ago"
+```
+
+#### Test failure detection:
+
+```bash
+# Start the monitor
+python3 main.py
+
+# Wait for one heartbeat (check Healthchecks.io dashboard shows "OK")
+
+# Kill the monitor
+# Press Ctrl+C
+
+# Wait 25 minutes (20 min timeout + 5 min grace)
+# You should receive an alert: "Site Monitor Heartbeat is DOWN"
+```
+
+### What Gets Detected
+
+| Scenario | Detected? | Alert Time |
+|----------|-----------|------------|
+| **Process crashes** | ✅ Yes | 20-25 minutes |
+| **Process hangs** (frozen) | ✅ Yes | 20-25 minutes |
+| **Out of memory kill** | ✅ Yes | 20-25 minutes |
+| **Server loses power** | ✅ Yes | 20-25 minutes |
+| **Network down** | ✅ Yes | 20-25 minutes |
+| **Checks failing** (sites down) | ❌ No | Use Telegram notifications |
+
+**Note:** Healthchecks.io detects when **the monitor stops working**. For alerts when **sites are down**, use Telegram notifications.
+
+### Heartbeat Messages
+
+The monitor sends informative messages with each ping:
+
+**On Startup:**
+```
+Monitor starting
+```
+
+**On Successful Checks:**
+```
+Checked 5 sites, 7 checks completed
+```
+
+You can see these messages in the Healthchecks.io dashboard under "Last Ping Body".
+
+### Troubleshooting
+
+**"No pings received"**
+- Check that `HEALTHCHECK_PING_URL` is set in `config/.env`
+- Check that `healthcheck.enabled: true` in `config/config.yaml`
+- Look for "Healthcheck.io monitoring enabled" in logs
+- Check for errors: `grep -i healthcheck logs/monitor.log`
+
+**"Ping URL not configured"**
+- You'll see: `Healthcheck.io monitoring disabled (no ping URL configured)`
+- Add `HEALTHCHECK_PING_URL` to `config/.env`
+
+**"Too many false alerts"**
+- Increase grace time in Healthchecks.io (e.g., 10 minutes instead of 5)
+- Increase period (e.g., 30 minutes instead of 20)
+
+### Cost
+
+**Free Tier (Recommended):**
+- 20 checks (you only need 1)
+- Email notifications ✅
+- SMS notifications ✅ (limited)
+- Unlimited integrations ✅
+- 1-month history ✅
+
+**More than enough for this use case!**
+
+### Alternative: Self-Hosted
+
+If you prefer self-hosting, Healthchecks.io is open source:
+```bash
+# Docker deployment
+docker run -d -p 8000:8000 \
+  --name healthchecks \
+  healthchecks/healthchecks
+```
+
+But the free hosted version is simpler and more reliable (independently hosted).
+
 ### Command-Line Options
 
 ```bash

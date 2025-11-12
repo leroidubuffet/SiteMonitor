@@ -162,3 +162,10 @@ reporting:
     enabled: false
     send_on_day: 1 # Monday
     send_at_hour: 9
+
+# External monitoring - Healthchecks.io integration
+# Sends heartbeat pings to detect if the monitor stops running or hangs
+healthcheck:
+  enabled: true  # Set to false to disable healthcheck pings
+  # Get your ping URL from https://healthchecks.io after creating a check
+  # Add HEALTHCHECK_PING_URL to config/.env with your unique ping URL

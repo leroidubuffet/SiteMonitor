@@ -204,6 +204,15 @@ class CredentialManager:
             "chat_id": self.get_credential("TELEGRAM_CHAT_ID"),
         }
 
+    def get_healthcheck_url(self) -> Optional[str]:
+        """
+        Get Healthchecks.io ping URL for external monitoring.
+
+        Returns:
+            Ping URL or None if not configured
+        """
+        return self.get_credential("HEALTHCHECK_PING_URL")
+
     def validate_credentials(self) -> Dict[str, bool]:
         """
         Validate that required credentials are present.

@@ -12,7 +12,7 @@ from .checkers import AuthChecker, CheckResult, HealthChecker, UptimeChecker
 from .notifiers import ConsoleNotifier, EmailNotifier, TelegramNotifier
 from .scheduler import MonitorScheduler
 from .storage import CredentialManager, StateManager
-from .utils import CircuitBreaker, MetricsCollector, setup_logging
+from .utils import CircuitBreaker, MetricsCollector, setup_logging, create_healthcheck_monitor
 
 
 class Monitor:
@@ -51,6 +51,14 @@ class Monitor:
         self.credential_manager = CredentialManager(env_file)
         self.state_manager = StateManager()
         self.metrics_collector = MetricsCollector()
+
+        # Initialize healthcheck monitor (external monitoring)
+        healthcheck_config = self.config.get("healthcheck", {})
+        healthcheck_url = self.credential_manager.get_healthcheck_url()
+        self.healthcheck = create_healthcheck_monitor(
+            ping_url=healthcheck_url,
+            enabled=healthcheck_config.get("enabled", True)
+        )
 
         # Get list of sites from config
         self.sites = self.config.get("sites", [])
@@ -208,6 +216,11 @@ class Monitor:
         self.logger.info(
             f"Completed {total_results} check(s) across {len(self.sites)} site(s)"
         )
+
+        # Send healthcheck ping (external monitoring)
+        if self.healthcheck.enabled:
+            message = f"Checked {len(self.sites)} sites, {total_results} checks completed"
+            self.healthcheck.ping_success(message)
 
         # Display metrics summary periodically
         if self.state_manager.state["global"]["total_checks"] % 10 == 0:
@@ -503,6 +516,10 @@ class Monitor:
 
         # Start scheduler
         self.scheduler.start()
+
+        # Send healthcheck start signal
+        if self.healthcheck.enabled:
+            self.healthcheck.ping_start()
 
         # Perform initial check
         self.logger.info("Performing initial check...")
