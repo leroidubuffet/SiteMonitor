@@ -612,6 +612,182 @@ Regular mode: You'll only receive alerts for failures and recoveries
 🕐 2025-11-08 14:30:15
 ```
 
+## Telegram Bot Commands (Bidirectional)
+
+The monitor includes an **optional** bidirectional Telegram bot that allows you to interact with the monitoring system via commands. This complements the one-way notifications by letting you check status, trigger checks, and view statistics directly from Telegram.
+
+### Features
+
+- **Remote Control**: Trigger checks, view status, and get statistics from anywhere
+- **Secure Authorization**: Only authorized Telegram user IDs can use commands
+- **Non-Intrusive**: Bot runs in separate thread, doesn't affect monitoring
+- **Silent Security**: Unauthorized users are silently ignored (no response sent)
+
+### Setup Instructions
+
+#### Step 1: Get Your Telegram User ID
+
+1. Open Telegram and search for **@userinfobot**
+2. Start a chat with the bot
+3. It will send you your user ID (e.g., `123456789`)
+
+#### Step 2: Configure Authorized Users
+
+Add your user ID to `config/.env`:
+
+```bash
+# Telegram Bot Commands Configuration
+# Comma-separated list of authorized user IDs
+TELEGRAM_AUTHORIZED_USERS=boliya
+```
+
+**Note**: You must already have `TELEGRAM_BOT_TOKEN` configured (same token used for notifications).
+
+#### Step 3: Enable Bot in Configuration
+
+Edit `config/config.yaml`:
+
+```yaml
+# Telegram Bot Configuration (bidirectional commands)
+bot:
+  enabled: true  # Enable bot commands
+```
+
+#### Step 4: Start Monitor with Bot
+
+```bash
+python3 main.py
+```
+
+You'll see in the logs:
+```
+INFO - Telegram bot initialized with 2 authorized user(s)
+INFO - Telegram bot started in separate thread
+```
+
+### Available Commands
+
+#### Basic Commands
+
+- `/start` - Welcome message and introduction
+- `/help` - Show all available commands with usage examples
+- `/status` - Check if monitor is running, view last check time, and total checks
+- `/sites` - List all monitored sites with current status (✅/❌)
+- `/check` - Trigger an immediate check of all sites
+
+#### Detailed Commands
+
+- `/stats` - View global statistics and per-site failure counts
+- `/site <name>` - Get detailed information for a specific site
+  - Example: `/site AEMET`
+- `/history <site>` - View recent check history (last 5 checks per check type)
+  - Example: `/history InfoRuta RCE`
+
+### Command Examples
+
+#### Check Monitor Status
+```
+You: /status
+
+Bot: 🟢 Monitor Status: Running
+
+     📊 Sites monitored: 5
+     🕐 Last check: 2025-11-13 10:30:15
+     📈 Total checks: 247
+
+     Monitored sites:
+       • AEMET
+       • DGT Traffic Cameras
+       • InfoRuta RCE
+       • Vialidad ACP
+       • Fomento VI
+```
+
+#### List All Sites
+```
+You: /sites
+
+Bot: 🌐 Monitored Sites:
+
+     ✅ AEMET
+       🔗 https://www.aemet.es/
+       🕐 Last check: 10:30:15
+
+     ❌ InfoRuta RCE
+       🔗 https://inforuta-rce.es/
+       🕐 Last check: 10:30:16
+```
+
+#### Trigger Immediate Check
+```
+You: /check
+
+Bot: 🔄 Triggering immediate check...
+
+Bot: ✅ Check completed successfully!
+```
+
+#### View Site Details
+```
+You: /site AEMET
+
+Bot: 🌐 Site: AEMET
+
+     🕐 Last check: 2025-11-13 10:30:15
+
+     Latest Check Results:
+       ✅ UPTIME: SUCCESS
+
+     Statistics:
+       Total checks: 82
+       Total failures: 0
+```
+
+#### View Check History
+```
+You: /history InfoRuta RCE
+
+Bot: 📜 History for InfoRuta RCE:
+
+     UPTIME:
+       ✅ 10:30:15 - SUCCESS
+       ✅ 10:15:12 - SUCCESS
+       ❌ 10:00:08 - FAILURE
+       ✅ 09:45:05 - SUCCESS
+       ✅ 09:30:01 - SUCCESS
+
+     AUTHENTICATION:
+       ✅ 10:30:16 - SUCCESS
+       ✅ 10:15:13 - SUCCESS
+       ❌ 10:00:09 - FAILURE
+       ✅ 09:45:06 - SUCCESS
+       ✅ 09:30:02 - SUCCESS
+```
+
+### Security Notes
+
+- **Authorization**: Only users with IDs in `TELEGRAM_AUTHORIZED_USERS` can use commands
+- **Silent Ignore**: Unauthorized users receive no response (they are silently ignored)
+- **Logging**: All unauthorized access attempts are logged for security auditing
+- **Same Token**: Bot uses the same `TELEGRAM_BOT_TOKEN` as notifications
+
+### Troubleshooting
+
+**Bot not responding to commands:**
+1. Check that `bot.enabled` is `true` in `config/config.yaml`
+2. Verify `TELEGRAM_AUTHORIZED_USERS` is set in `config/.env`
+3. Confirm your user ID is correct (use @userinfobot)
+4. Check monitor logs for bot initialization errors
+
+**"Unauthorized" logged in monitor output:**
+- Your user ID is not in the authorized list
+- Check that you're using the correct user ID
+- Make sure user IDs are comma-separated with no spaces: `123,456,789`
+
+**Bot stops responding:**
+- Check monitor logs for errors
+- Restart the monitor: `Ctrl+C` then `python3 main.py`
+
 ## External Monitoring with Healthchecks.io
 
 Healthchecks.io provides **external monitoring** to ensure your monitor is running correctly. It works by detecting when the monitor stops sending "heartbeat" pings.

@@ -1,8 +1,11 @@
 """Main monitor orchestrator that coordinates all components."""
 
+import asyncio
 import logging
+import os
 import signal
 import sys
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -70,6 +73,13 @@ class Monitor:
 
         # Initialize notifiers (shared across all sites)
         self.notifiers = self._initialize_notifiers()
+
+        # Initialize bot (if enabled)
+        self.bot = None
+        self.bot_thread = None
+        self.bot_loop = None
+        if self.config.get("bot", {}).get("enabled", False):
+            self.bot = self._initialize_bot()
 
         # Initialize scheduler
         self.scheduler = MonitorScheduler(self.config, blocking=False)
@@ -200,6 +210,95 @@ class Monitor:
             self.logger.info(f"Telegram notifier initialized ({mode_str} mode)")
 
         return notifiers
+
+    def _initialize_bot(self):
+        """Initialize Telegram bot for bidirectional commands."""
+        try:
+            from .bot import TelegramBotHandler
+
+            # Get bot token
+            bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+            if not bot_token:
+                self.logger.error("TELEGRAM_BOT_TOKEN not found in environment variables")
+                return None
+
+            # Get authorized users
+            authorized_users_str = os.getenv("TELEGRAM_AUTHORIZED_USERS", "")
+            if not authorized_users_str:
+                self.logger.error("TELEGRAM_AUTHORIZED_USERS not found in environment variables")
+                return None
+
+            # Parse authorized users (comma-separated list of user IDs)
+            try:
+                authorized_users = [int(uid.strip()) for uid in authorized_users_str.split(",") if uid.strip()]
+            except ValueError as e:
+                self.logger.error(f"Invalid TELEGRAM_AUTHORIZED_USERS format: {e}")
+                return None
+
+            if not authorized_users:
+                self.logger.error("No authorized users configured for bot")
+                return None
+
+            # Create bot handler
+            bot = TelegramBotHandler(
+                bot_token=bot_token,
+                authorized_users=authorized_users,
+                monitor=self,
+                state_manager=self.state_manager,
+                metrics_collector=self.metrics_collector,
+            )
+
+            self.logger.info(f"Telegram bot initialized with {len(authorized_users)} authorized user(s)")
+            return bot
+
+        except ImportError as e:
+            self.logger.error(f"Failed to import TelegramBotHandler: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to initialize bot: {e}", exc_info=True)
+            return None
+
+    def _start_bot(self):
+        """Start the Telegram bot in a separate thread."""
+        def bot_thread_func():
+            """Function to run bot in separate thread."""
+            try:
+                # Create new event loop for this thread
+                self.bot_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self.bot_loop)
+
+                # Start bot
+                self.bot_loop.run_until_complete(self.bot.start())
+
+                # Keep running
+                while self.running and self.bot.running:
+                    self.bot_loop.run_until_complete(asyncio.sleep(1))
+
+            except Exception as e:
+                self.logger.error(f"Bot thread error: {e}", exc_info=True)
+            finally:
+                if self.bot_loop:
+                    self.bot_loop.close()
+
+        self.bot_thread = threading.Thread(target=bot_thread_func, daemon=True)
+        self.bot_thread.start()
+        self.logger.info("Telegram bot started in separate thread")
+
+    def _stop_bot(self):
+        """Stop the Telegram bot."""
+        try:
+            if self.bot and self.bot.running:
+                # Stop bot in its event loop
+                if self.bot_loop and not self.bot_loop.is_closed():
+                    asyncio.run_coroutine_threadsafe(self.bot.stop(), self.bot_loop)
+
+                # Wait for thread to finish (with timeout)
+                if self.bot_thread and self.bot_thread.is_alive():
+                    self.bot_thread.join(timeout=5)
+
+                self.logger.info("Telegram bot stopped")
+        except Exception as e:
+            self.logger.error(f"Error stopping bot: {e}", exc_info=True)
 
     def perform_checks(self):
         """Perform all enabled checks for all sites."""
@@ -529,6 +628,10 @@ class Monitor:
         # Send startup notification
         self._send_startup_notification(interval_minutes)
 
+        # Start bot if enabled
+        if self.bot:
+            self._start_bot()
+
         self.logger.info(f"Monitor started - checking every {interval_minutes} minutes")
         self.logger.info("Press Ctrl+C to stop")
 
@@ -545,6 +648,10 @@ class Monitor:
         """Stop the monitor."""
         self.logger.info("Stopping monitor...")
         self.running = False
+
+        # Stop bot if running
+        if self.bot:
+            self._stop_bot()
 
         # Shutdown scheduler
         if self.scheduler:

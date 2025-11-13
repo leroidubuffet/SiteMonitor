@@ -37,6 +37,9 @@ black==24.10.0  # Updated to latest stable version
 flake8==7.1.1  # Updated to latest stable version
 mypy==1.13.0  # Updated to latest stable version
 
+# Telegram Bot
+python-telegram-bot==21.7  # Bidirectional bot with command handling
+
 # Optional: Enhanced features (commented out by default)
 # prometheus-client==0.21.0  # Updated - Metrics export for Prometheus
 # Note: sentry-sdk removed due to CVE - consider alternative error tracking solutions

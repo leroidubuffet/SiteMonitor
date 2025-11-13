@@ -128,6 +128,10 @@ notifications:
       - recovery
       - auth_failure
 
+# Telegram Bot Configuration (bidirectional commands)
+bot:
+  enabled: true # Enable bidirectional bot commands
+
 logging:
   level: INFO
   file_path: "./logs/monitor.log"
@@ -164,6 +168,6 @@ reporting:
 # External monitoring - Healthchecks.io integration
 # Sends heartbeat pings to detect if the monitor stops running or hangs
 healthcheck:
-  enabled: true  # Set to false to disable healthcheck pings
+  enabled: true # Set to false to disable healthcheck pings
   # Get your ping URL from https://healthchecks.io after creating a check
   # Add HEALTHCHECK_PING_URL to config/.env with your unique ping URL
