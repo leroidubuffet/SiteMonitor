@@ -12,7 +12,7 @@ from .checkers import AuthChecker, CheckResult, HealthChecker, UptimeChecker
 from .notifiers import ConsoleNotifier, EmailNotifier, TelegramNotifier
 from .scheduler import MonitorScheduler
 from .storage import CredentialManager, StateManager
-from .utils import CircuitBreaker, MetricsCollector, setup_logging, create_healthcheck_monitor
+from .utils import CircuitBreaker, MetricsCollector, setup_logging, create_healthcheck_monitor, ConfigValidator, ConfigValidationError
 
 
 class Monitor:
@@ -81,12 +81,38 @@ class Monitor:
         self.running = False
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
-        """Load configuration from YAML file."""
+        """Load and validate configuration from YAML file."""
         try:
             with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
             print(f"Configuration loaded from {config_path}")
+
+            # Validate configuration for security and correctness
+            print("Validating configuration...")
+            try:
+                warnings = ConfigValidator.validate_config(config)
+
+                # Display any warnings
+                if warnings:
+                    print("\nConfiguration warnings:")
+                    for warning in warnings:
+                        print(f"  ⚠ {warning}")
+                    print()
+
+                print("✓ Configuration validation passed")
+
+            except ConfigValidationError as e:
+                print(f"\n✗ Configuration validation failed: {e}")
+                print("\nPlease fix the configuration errors and try again.")
+                sys.exit(1)
+
             return config
+        except FileNotFoundError:
+            print(f"Configuration file not found: {config_path}")
+            sys.exit(1)
+        except yaml.YAMLError as e:
+            print(f"Failed to parse YAML configuration: {e}")
+            sys.exit(1)
         except Exception as e:
             print(f"Failed to load configuration: {e}")
             sys.exit(1)

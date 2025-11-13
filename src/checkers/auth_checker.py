@@ -1,17 +1,14 @@
 """Authentication checker for InfoRuta login verification."""
 
-import ipaddress
-import re
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional
-from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
 
 from ..storage.credential_manager import CredentialManager
-from .base_checker import BaseChecker, CheckResult, CheckStatus
+from .base_checker import BaseChecker, CheckResult, CheckStatus, SSRFProtectionError
 
 
 class AuthChecker(BaseChecker):
@@ -42,82 +39,6 @@ class AuthChecker(BaseChecker):
     def get_check_type(self) -> str:
         """Return the check type identifier."""
         return "authentication"
-
-    def _validate_url(self, url: str) -> bool:
-        """
-        Validate URL to prevent SSRF attacks.
-
-        Args:
-            url: URL to validate
-
-        Returns:
-            True if URL is safe
-
-        Raises:
-            ValueError: If URL is potentially unsafe
-        """
-        parsed = urlparse(url)
-
-        # Only allow http and https schemes
-        if parsed.scheme not in ["http", "https"]:
-            raise ValueError(
-                f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed."
-            )
-
-        if not parsed.hostname:
-            raise ValueError("URL must have a valid hostname")
-
-        # Block localhost and loopback addresses
-        if parsed.hostname.lower() in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]:
-            raise ValueError("Localhost addresses are not allowed")
-
-        # Try to resolve hostname and check if it's a private IP
-        try:
-            # Check if hostname is an IP address
-            ip = ipaddress.ip_address(parsed.hostname)
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
-                raise ValueError(f"Private/internal IP addresses are not allowed: {ip}")
-        except ValueError as e:
-            # Not an IP address, which is fine - it's a hostname
-            # But we still need to check for common cloud metadata endpoints
-            if parsed.hostname.startswith("169.254"):
-                raise ValueError(
-                    "Cloud metadata IP ranges (169.254.x.x) are not allowed"
-                )
-            if parsed.hostname.lower() in [
-                "metadata.google.internal",
-                "metadata",
-                "instance-data",
-            ]:
-                raise ValueError("Cloud metadata hostnames are not allowed")
-
-        # Block common private IP ranges in hostname
-        if any(
-            parsed.hostname.startswith(prefix)
-            for prefix in [
-                "10.",
-                "172.16.",
-                "172.17.",
-                "172.18.",
-                "172.19.",
-                "172.20.",
-                "172.21.",
-                "172.22.",
-                "172.23.",
-                "172.24.",
-                "172.25.",
-                "172.26.",
-                "172.27.",
-                "172.28.",
-                "172.29.",
-                "172.30.",
-                "172.31.",
-                "192.168.",
-            ]
-        ):
-            raise ValueError(f"Private IP ranges are not allowed: {parsed.hostname}")
-
-        return True
 
     def check(self, site_name: Optional[str] = None) -> CheckResult:
         """
@@ -258,19 +179,16 @@ class AuthChecker(BaseChecker):
             # Construct login URL
             login_url = base_url.rstrip("/") + "/" + login_endpoint.lstrip("/")
 
-            # Validate URL to prevent SSRF attacks
+            # Validate URL and get the login page with SSRF protection
+            self.logger.debug(f"Fetching login page: {login_url}")
             try:
-                self._validate_url(login_url)
-            except ValueError as e:
-                self.logger.error(f"URL validation failed: {e}")
+                login_page_response = self._make_request('get', login_url)
+            except SSRFProtectionError as e:
+                self.logger.error(f"SSRF protection blocked login URL: {e}")
                 return {
                     "success": False,
-                    "error": f"Invalid URL: {str(e)}",
+                    "error": f"Invalid or unsafe URL: {str(e)}",
                 }
-
-            # First, get the login page to extract any necessary tokens/viewstate
-            self.logger.debug(f"Fetching login page: {login_url}")
-            login_page_response = self.client.get(login_url)
 
             if login_page_response.status_code != 200:
                 return {
@@ -318,17 +236,25 @@ class AuthChecker(BaseChecker):
                 )
                 self.logger.debug("Using InfoRuta default field names")
 
-            # Perform login POST
+            # Perform login POST with SSRF protection
             self.logger.debug("Submitting login credentials")
-            login_response = self.client.post(
-                login_url,
-                data=form_data,
-                headers={
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Referer": login_url,
-                    "Origin": base_url.rstrip("/"),
-                },
-            )
+            try:
+                login_response = self._make_request(
+                    'post',
+                    login_url,
+                    data=form_data,
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Referer": login_url,
+                        "Origin": base_url.rstrip("/"),
+                    },
+                )
+            except SSRFProtectionError as e:
+                self.logger.error(f"SSRF protection blocked login POST: {e}")
+                return {
+                    "success": False,
+                    "error": f"SSRF protection blocked request: {str(e)}",
+                }
 
             # Check response size before parsing (prevent memory exhaustion)
             if not self._check_response_size(login_response, self.MAX_HTML_PARSE_SIZE):

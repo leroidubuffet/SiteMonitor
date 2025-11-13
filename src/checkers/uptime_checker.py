@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from .base_checker import BaseChecker, CheckResult, CheckStatus
+from .base_checker import BaseChecker, CheckResult, CheckStatus, SSRFProtectionError
 
 
 class UptimeChecker(BaseChecker):
@@ -59,8 +59,8 @@ class UptimeChecker(BaseChecker):
                 self.logger.info(f"Checking endpoint: {full_url}")
 
                 try:
-                    # Perform HTTP request
-                    response = self.client.get(full_url)
+                    # Perform HTTP request with SSRF protection
+                    response = self._make_request('get', full_url)
                     status_code = response.status_code
 
                     # Extract performance metrics
@@ -98,6 +98,11 @@ class UptimeChecker(BaseChecker):
                         warning_messages.append(
                             f"Slow response: {response_time:.0f}ms exceeds {warning_threshold}ms"
                         )
+
+                except SSRFProtectionError as e:
+                    all_success = False
+                    error_messages.append(f"SSRF protection blocked {endpoint}: {str(e)}")
+                    self.logger.error(f"SSRF protection blocked {full_url}: {e}")
 
                 except httpx.TimeoutException as e:
                     all_success = False

@@ -3,6 +3,7 @@ from .metrics import MetricsCollector
 from .circuit_breaker import CircuitBreaker
 from .sanitize import sanitize_html, sanitize_email_header, sanitize_log_message
 from .healthcheck import HealthcheckMonitor, create_healthcheck_monitor
+from .config_validator import ConfigValidator, ConfigValidationError
 
 __all__ = [
     "setup_logging",
@@ -14,4 +15,6 @@ __all__ = [
     "sanitize_log_message",
     "HealthcheckMonitor",
     "create_healthcheck_monitor",
+    "ConfigValidator",
+    "ConfigValidationError",
 ]

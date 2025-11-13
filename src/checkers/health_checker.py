@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import httpx
 
-from .base_checker import BaseChecker, CheckResult, CheckStatus
+from .base_checker import BaseChecker, CheckResult, CheckStatus, SSRFProtectionError
 from .auth_checker import AuthChecker
 
 
@@ -89,9 +89,11 @@ class HealthChecker(BaseChecker):
 
             self.logger.info(f"Checking protected endpoint: {health_url}")
 
-            # Make request with session cookies
-            response = self.client.get(
-                health_url, cookies=self.auth_checker.session_cookies
+            # Make request with session cookies using SSRF-protected method
+            response = self._make_request(
+                'get',
+                health_url,
+                cookies=self.auth_checker.session_cookies
             )
 
             response_time_ms = (time.time() - start_time) * 1000
@@ -172,6 +174,20 @@ class HealthChecker(BaseChecker):
                         "response_length": len(response.text),
                     },
                 )
+
+            self.update_consecutive_counts(result)
+            return result
+
+        except SSRFProtectionError as e:
+            self.logger.error(f"SSRF protection blocked health check: {e}")
+            result = CheckResult(
+                check_type=self.get_check_type(),
+                timestamp=timestamp,
+                status=CheckStatus.ERROR,
+                success=False,
+                response_time_ms=(time.time() - start_time) * 1000,
+                error_message=f"SSRF protection blocked request: {str(e)}",
+            )
 
             self.update_consecutive_counts(result)
             return result

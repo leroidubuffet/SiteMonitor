@@ -1,14 +1,14 @@
-# Functional Analysis: Multi-Site Website Monitor
+⏺ Functional Analysis: Multi-Site Website Monitor
 
-## Executive Summary
+  Executive Summary
 
   This is a well-architected Python monitoring system with strong security foundations, but it
   has several weak spots in resilience, configuration management, and operational monitoring. The
-   codebase shows good security awareness (SSRF protection, credential masking, atomic writes)
+   codebase shows good security awareness (Server-Side Request Forgery protection, credential masking, atomic writes)
   but needs improvements in error handling, testability, and deployment automation.
 
   ---
-## Architecture Overview
+  Architecture Overview
 
   Strengths:
   - Clean separation of concerns (checkers, notifiers, storage, utils)
@@ -24,8 +24,7 @@
   - State migration logic but no version tracking
 
   ---
-
-## Critical Weak Spots
+  Critical Weak Spots
 
   1. Error Handling & Resilience
 
@@ -42,7 +41,6 @@
           failure_threshold = cb_config.get("failure_threshold", 5)
           if site_state["circuit_breaker"]["failure_count"] >= failure_threshold:
               site_state["circuit_breaker"]["is_open"] = True
-
   Issues:
   - Catches ALL exceptions indiscriminately
   - Circuit breaker logic mixed with error handling
@@ -52,8 +50,7 @@
   Impact: One bad configuration can cascade failures across all checks
 
   ---
-
-2. State Management Race Conditions
+  2. State Management Race Conditions
 
   Location: src/storage/state_manager.py:239, src/monitor.py:329-336
 
@@ -387,3 +384,4 @@
 
   The most critical issues are state race conditions and unused circuit breaker logic. Fixing
   these will dramatically improve reliability.
+
