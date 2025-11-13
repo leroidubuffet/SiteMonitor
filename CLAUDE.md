@@ -193,7 +193,8 @@ To add a new monitored site:
 
 ### Error Handling Patterns
 
-- Circuit breakers prevent excessive checks to failing sites (opens after 5 consecutive failures, waits 30 minutes)
 - Retry logic with exponential backoff for transient failures
 - Graceful degradation: One site's failure doesn't stop monitoring of other sites
+- Telegram notifications alert on failures and recoveries
 - Signal handlers (SIGINT, SIGTERM) for graceful shutdown
+- Note: Circuit breaker removed - unnecessary for low-volume monitoring (~20 requests/hour)

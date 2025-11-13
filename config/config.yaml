@@ -86,11 +86,9 @@ retry:
   max_attempts: 3
   max_backoff_seconds: 60
 
-circuit_breaker:
-  enabled: true
-  failure_threshold: 5
-  recovery_timeout_minutes: 30
-  half_open_attempts: 2
+# Circuit breaker removed - unnecessary for low-volume laptop monitoring
+# Sites are checked every 15 minutes (only ~20 requests/hour total)
+# Telegram notifications + Healthchecks.io provide sufficient alerting
 
 notifications:
   console:

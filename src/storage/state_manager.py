@@ -30,7 +30,7 @@ class StateManager:
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # State data - now per-site
-        # Structure: { "site_name": { last_check_time, last_results, history, statistics, circuit_breaker } }
+        # Structure: { "site_name": { last_check_time, last_results, history, statistics } }
         self.state = {
             "sites": {},
             "global": {
@@ -162,11 +162,6 @@ class StateManager:
                     "last_failure_time": {},
                     "last_recovery_time": {},
                 },
-                "circuit_breaker": {
-                    "is_open": False,
-                    "failure_count": 0,
-                    "last_failure": None,
-                },
             }
         return self.state["sites"][site_name]
 
@@ -218,10 +213,6 @@ class StateManager:
 
             # Record failure time
             stats["last_failure_time"][check_type] = result.timestamp.isoformat()
-
-            # Update circuit breaker
-            site_state["circuit_breaker"]["failure_count"] += 1
-            site_state["circuit_breaker"]["last_failure"] = result.timestamp.isoformat()
         else:
             # Reset consecutive failures on success
             if check_type in stats["consecutive_failures"]:
@@ -231,9 +222,6 @@ class StateManager:
                         result.timestamp.isoformat()
                     )
                 stats["consecutive_failures"][check_type] = 0
-
-            # Reset circuit breaker on success
-            site_state["circuit_breaker"]["failure_count"] = 0
 
         # Auto-save state
         self.save_state()
@@ -363,7 +351,6 @@ class StateManager:
                 else None,
                 "statistics": site_state["statistics"].copy(),
                 "current_status": {},
-                "circuit_breaker": site_state["circuit_breaker"].copy(),
             }
 
             # Add current status for each check type
@@ -434,11 +421,6 @@ class StateManager:
             "last_results": old_state.get("last_results", {}),
             "history": old_state.get("history", {}),
             "statistics": old_state.get("statistics", {}),
-            "circuit_breaker": {
-                "is_open": False,
-                "failure_count": 0,
-                "last_failure": None,
-            },
         }
 
         # Migrate global stats

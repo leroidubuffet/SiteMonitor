@@ -12,7 +12,7 @@ from .checkers import AuthChecker, CheckResult, HealthChecker, UptimeChecker
 from .notifiers import ConsoleNotifier, EmailNotifier, TelegramNotifier
 from .scheduler import MonitorScheduler
 from .storage import CredentialManager, StateManager
-from .utils import CircuitBreaker, MetricsCollector, setup_logging, create_healthcheck_monitor, ConfigValidator, ConfigValidationError
+from .utils import MetricsCollector, setup_logging, create_healthcheck_monitor, ConfigValidator, ConfigValidationError
 
 
 class Monitor:
@@ -212,19 +212,6 @@ class Monitor:
             site_name = site_config.get("name", "Unknown")
             self.logger.info(f"[{site_name}] Starting checks...")
 
-            # Check per-site circuit breaker
-            cb_config = self.config.get("circuit_breaker", {})
-            site_state = self.state_manager._get_site_state(site_name)
-            circuit_breaker_state = site_state.get("circuit_breaker", {})
-
-            if cb_config.get("enabled", True) and circuit_breaker_state.get(
-                "is_open", False
-            ):
-                self.logger.warning(
-                    f"[{site_name}] Circuit breaker is OPEN, skipping checks"
-                )
-                continue
-
             # Initialize checkers for this site
             checkers = self._initialize_checkers_for_site(site_config)
 
@@ -348,18 +335,6 @@ class Monitor:
                         f"[{site_name}] Error during {check_type} check: {e}",
                         exc_info=True,
                     )
-
-                    # Update circuit breaker on failure
-                    cb_config = self.config.get("circuit_breaker", {})
-                    if cb_config.get("enabled", True):
-                        site_state = self.state_manager._get_site_state(site_name)
-                        failure_threshold = cb_config.get("failure_threshold", 5)
-                        if (
-                            site_state["circuit_breaker"]["failure_count"]
-                            >= failure_threshold
-                        ):
-                            site_state["circuit_breaker"]["is_open"] = True
-                            self.logger.warning(f"[{site_name}] Circuit breaker OPENED")
 
         return results
 
