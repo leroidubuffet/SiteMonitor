@@ -38,6 +38,7 @@ class TelegramBotHandler:
         monitor: Any,
         state_manager: StateManager,
         metrics_collector: MetricsCollector,
+        executor: Any = None,
     ):
         """
         Initialize the Telegram bot handler.
@@ -48,12 +49,14 @@ class TelegramBotHandler:
             monitor: Monitor instance for triggering checks
             state_manager: StateManager instance for accessing state
             metrics_collector: MetricsCollector instance for metrics
+            executor: ThreadPoolExecutor for running blocking commands
         """
         self.bot_token = bot_token
         self.authorized_users = set(authorized_users)
         self.monitor = monitor
         self.state_manager = state_manager
         self.metrics_collector = metrics_collector
+        self.executor = executor
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Build application
@@ -254,9 +257,11 @@ class TelegramBotHandler:
         try:
             await update.message.reply_text("🔄 Triggering immediate check...")
 
-            # Run check in executor to avoid blocking the bot
+            # Run check in dedicated executor to avoid blocking the bot
+            # Using a dedicated executor with limited workers prevents thread pool exhaustion
+            # when multiple /check commands are issued in rapid succession
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self.monitor.perform_checks)
+            await loop.run_in_executor(self.executor, self.monitor.perform_checks)
 
             await update.message.reply_text("✅ Check completed successfully!")
 

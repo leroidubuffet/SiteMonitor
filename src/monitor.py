@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -78,6 +79,12 @@ class Monitor:
         self.bot = None
         self.bot_thread = None
         self.bot_loop = None
+        # Dedicated thread pool executor for bot commands to prevent thread exhaustion
+        # Limits concurrent /check commands to avoid blocking the bot's event loop
+        self.bot_executor = ThreadPoolExecutor(
+            max_workers=2,
+            thread_name_prefix="bot_cmd"
+        )
         if self.config.get("bot", {}).get("enabled", False):
             self.bot = self._initialize_bot()
 
@@ -239,13 +246,14 @@ class Monitor:
                 self.logger.error("No authorized users configured for bot")
                 return None
 
-            # Create bot handler
+            # Create bot handler with dedicated executor
             bot = TelegramBotHandler(
                 bot_token=bot_token,
                 authorized_users=authorized_users,
                 monitor=self,
                 state_manager=self.state_manager,
                 metrics_collector=self.metrics_collector,
+                executor=self.bot_executor,
             )
 
             self.logger.info(f"Telegram bot initialized with {len(authorized_users)} authorized user(s)")
@@ -359,83 +367,97 @@ class Monitor:
         """
         results = []
 
-        # Perform checks in order: uptime -> auth -> health
-        check_order = ["uptime", "authentication", "health"]
+        try:
+            # Perform checks in order: uptime -> auth -> health
+            check_order = ["uptime", "authentication", "health"]
 
-        for check_type in check_order:
-            if check_type in checkers:
-                checker = checkers[check_type]
+            for check_type in check_order:
+                if check_type in checkers:
+                    checker = checkers[check_type]
 
-                try:
-                    # Skip health check if auth failed
-                    if check_type == "health":
-                        auth_result = next(
-                            (r for r in results if r.check_type == "authentication"),
-                            None,
+                    try:
+                        # Skip health check if auth failed
+                        if check_type == "health":
+                            auth_result = next(
+                                (r for r in results if r.check_type == "authentication"),
+                                None,
+                            )
+                            if auth_result and not auth_result.success:
+                                self.logger.warning(
+                                    f"[{site_name}] Skipping health check due to authentication failure"
+                                )
+                                continue
+
+                        # Perform the check
+                        self.logger.debug(f"[{site_name}] Performing {check_type} check...")
+
+                        # Call check with site_name for per-site state
+                        if check_type == "authentication":
+                            result = checker.check(site_name=site_name)
+                        else:
+                            result = checker.check()
+
+                        results.append(result)
+
+                        # Record metrics
+                        self.metrics_collector.record_check_result(
+                            result.success, result.response_time_ms
                         )
-                        if auth_result and not auth_result.success:
-                            self.logger.warning(
-                                f"[{site_name}] Skipping health check due to authentication failure"
-                            )
-                            continue
 
-                    # Perform the check
-                    self.logger.debug(f"[{site_name}] Performing {check_type} check...")
-
-                    # Call check with site_name for per-site state
-                    if check_type == "authentication":
-                        result = checker.check(site_name=site_name)
-                    else:
-                        result = checker.check()
-
-                    results.append(result)
-
-                    # Record metrics
-                    self.metrics_collector.record_check_result(
-                        result.success, result.response_time_ms
-                    )
-
-                    # Get previous result for comparison
-                    previous_result_dict = self.state_manager.get_last_result(
-                        check_type, site_name
-                    )
-                    previous_success = True
-                    if previous_result_dict:
-                        previous_success = previous_result_dict.get("success", True)
-
-                    # Record in state manager (with site name)
-                    self.state_manager.record_result(result, site_name)
-
-                    # Collect for batch notifications if batch_results list provided
-                    if batch_results is not None:
-                        # Get previous result for notifiers to check state changes
-                        previous_result = None
+                        # Get previous result for comparison
+                        previous_result_dict = self.state_manager.get_last_result(
+                            check_type, site_name
+                        )
+                        previous_success = True
                         if previous_result_dict:
-                            from .checkers import CheckStatus
+                            previous_success = previous_result_dict.get("success", True)
 
-                            status_str = previous_result_dict.get(
-                                "status", "SUCCESS"
-                            ).upper()
-                            previous_result = CheckResult(
-                                check_type=previous_result_dict.get("check_type", ""),
-                                timestamp=datetime.fromisoformat(
-                                    previous_result_dict.get("timestamp", "")
-                                ),
-                                status=CheckStatus[status_str],
-                                success=previous_result_dict.get("success", True),
-                            )
-                        batch_results.append((result, previous_result, site_name))
+                        # Record in state manager (with site name)
+                        self.state_manager.record_result(result, site_name)
 
-                    # Always send to console immediately (non-batch)
-                    self._send_console_notification(result, site_name)
+                        # Collect for batch notifications if batch_results list provided
+                        if batch_results is not None:
+                            # Get previous result for notifiers to check state changes
+                            previous_result = None
+                            if previous_result_dict:
+                                from .checkers import CheckStatus
 
+                                status_str = previous_result_dict.get(
+                                    "status", "SUCCESS"
+                                ).upper()
+                                previous_result = CheckResult(
+                                    check_type=previous_result_dict.get("check_type", ""),
+                                    timestamp=datetime.fromisoformat(
+                                        previous_result_dict.get("timestamp", "")
+                                    ),
+                                    status=CheckStatus[status_str],
+                                    success=previous_result_dict.get("success", True),
+                                )
+                            batch_results.append((result, previous_result, site_name))
+
+                        # Always send to console immediately (non-batch)
+                        self._send_console_notification(result, site_name)
+
+                    except Exception as e:
+                        self.logger.error(
+                            f"[{site_name}] Error during {check_type} check: {e}",
+                            exc_info=True,
+                        )
+
+            return results
+
+        finally:
+            # CRITICAL: Cleanup all checkers to prevent resource leaks
+            # Each checker may have HTTP clients, sessions, and file descriptors
+            # that must be explicitly closed to prevent accumulation over time
+            for check_type, checker in checkers.items():
+                try:
+                    checker.cleanup()
+                    self.logger.debug(f"[{site_name}] Cleaned up {check_type} checker")
                 except Exception as e:
                     self.logger.error(
-                        f"[{site_name}] Error during {check_type} check: {e}",
-                        exc_info=True,
+                        f"[{site_name}] Error cleaning up {check_type} checker: {e}"
                     )
-
-        return results
 
     def _send_notifications(
         self, result: CheckResult, previous_success: bool, site_name: str
@@ -652,6 +674,12 @@ class Monitor:
         # Stop bot if running
         if self.bot:
             self._stop_bot()
+
+        # Shutdown bot command executor
+        if self.bot_executor:
+            self.logger.info("Shutting down bot command executor...")
+            self.bot_executor.shutdown(wait=True)
+            self.logger.info("Bot command executor shut down")
 
         # Shutdown scheduler
         if self.scheduler:

@@ -64,8 +64,8 @@ class TelegramNotifier(BaseNotifier):
         self.bot_token = telegram_creds.get("bot_token")
         self.chat_id = telegram_creds.get("chat_id")
 
-        # HTTP client for API calls
-        self.http_client = httpx.Client(timeout=10.0)
+        # Note: No longer keeping a persistent HTTP client to avoid resource leaks
+        # Each API call will create and properly close its own client
 
         # Validation
         if self.enabled and (not self.bot_token or not self.chat_id):
@@ -330,6 +330,9 @@ class TelegramNotifier(BaseNotifier):
         """
         Send message via Telegram Bot API.
 
+        Uses a fresh HTTP client for each request with proper resource cleanup
+        to prevent connection leaks and file descriptor accumulation.
+
         Args:
             message: Formatted message to send
 
@@ -344,17 +347,20 @@ class TelegramNotifier(BaseNotifier):
 
         payload = {"chat_id": self.chat_id, "text": message, "parse_mode": "MarkdownV2"}
 
+        # Use context manager to ensure HTTP client is properly closed
+        # This prevents resource leaks that accumulate over long-running sessions
         try:
-            response = self.http_client.post(url, json=payload)
-            response.raise_for_status()
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(url, json=payload)
+                response.raise_for_status()
 
-            result = response.json()
-            if result.get("ok"):
-                self.logger.debug("Telegram message sent successfully")
-                return True
-            else:
-                self.logger.error(f"Telegram API error: {result.get('description')}")
-                return False
+                result = response.json()
+                if result.get("ok"):
+                    self.logger.debug("Telegram message sent successfully")
+                    return True
+                else:
+                    self.logger.error(f"Telegram API error: {result.get('description')}")
+                    return False
 
         except httpx.HTTPStatusError as e:
             self.logger.error(
@@ -367,8 +373,3 @@ class TelegramNotifier(BaseNotifier):
         except Exception as e:
             self.logger.error(f"Unexpected error sending Telegram message: {str(e)}")
             return False
-
-    def __del__(self):
-        """Cleanup HTTP client on destruction."""
-        if hasattr(self, "http_client"):
-            self.http_client.close()

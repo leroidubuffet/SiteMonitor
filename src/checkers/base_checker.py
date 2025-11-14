@@ -101,7 +101,7 @@ class BaseChecker(ABC):
 
     @property
     def client(self) -> httpx.Client:
-        """Get or create HTTPX client."""
+        """Get or create HTTPX client with connection pool limits."""
         if self._client is None:
             timeout = httpx.Timeout(
                 timeout=self.config.get("monitoring", {}).get("timeout_seconds", 30),
@@ -110,8 +110,19 @@ class BaseChecker(ABC):
                 write=10.0,
                 pool=5.0,
             )
+
+            # Configure connection pool limits to prevent resource exhaustion
+            # This is critical for long-running monitors to avoid accumulating
+            # too many connections and file descriptors over time
+            limits = httpx.Limits(
+                max_connections=10,        # Maximum total connections in pool
+                max_keepalive_connections=5,  # Maximum idle connections to keep alive
+                keepalive_expiry=30.0      # Close idle connections after 30 seconds
+            )
+
             self._client = httpx.Client(
                 timeout=timeout,
+                limits=limits,
                 follow_redirects=True,
                 http2=True,
                 headers={
