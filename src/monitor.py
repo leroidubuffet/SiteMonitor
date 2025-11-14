@@ -3,7 +3,9 @@
 import asyncio
 import logging
 import os
+import platform
 import signal
+import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -90,6 +92,9 @@ class Monitor:
 
         # Initialize scheduler
         self.scheduler = MonitorScheduler(self.config, blocking=False)
+
+        # Sleep prevention process (to ensure reliable monitoring)
+        self.caffeinate_process = None
 
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._handle_shutdown)
@@ -307,6 +312,96 @@ class Monitor:
                 self.logger.info("Telegram bot stopped")
         except Exception as e:
             self.logger.error(f"Error stopping bot: {e}", exc_info=True)
+
+    def _start_sleep_prevention(self):
+        """
+        Prevent computer from sleeping while monitoring is active.
+
+        Critical for reliable 24/7 monitoring - if the computer sleeps:
+        - Network connections die
+        - Telegram bot stops responding
+        - Monitoring checks are missed
+        - Failure notifications are not sent
+        """
+        system = platform.system()
+
+        try:
+            if system == "Darwin":  # macOS
+                # caffeinate prevents sleep on macOS
+                # -i prevents idle sleep
+                # -s prevents system sleep even when display sleeps
+                self.caffeinate_process = subprocess.Popen(
+                    ['caffeinate', '-i', '-s'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                self.logger.info("✓ Sleep prevention enabled (macOS caffeinate)")
+
+            elif system == "Linux":
+                # Try systemd-inhibit on Linux
+                try:
+                    self.caffeinate_process = subprocess.Popen(
+                        ['systemd-inhibit', '--what=sleep:idle', '--who=SiteMonitor',
+                         '--why=Critical monitoring active', '--mode=block',
+                         'sleep', 'infinity'],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    self.logger.info("✓ Sleep prevention enabled (systemd-inhibit)")
+                except FileNotFoundError:
+                    self.logger.warning(
+                        "⚠ Sleep prevention not available on this Linux system. "
+                        "Install systemd for reliable monitoring or deploy to always-on hardware."
+                    )
+
+            elif system == "Windows":
+                # Windows sleep prevention requires different approach
+                # We'll use SetThreadExecutionState via ctypes
+                import ctypes
+                ES_CONTINUOUS = 0x80000000
+                ES_SYSTEM_REQUIRED = 0x00000001
+                ES_AWAYMODE_REQUIRED = 0x00000040
+
+                ctypes.windll.kernel32.SetThreadExecutionState(
+                    ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED
+                )
+                self.logger.info("✓ Sleep prevention enabled (Windows SetThreadExecutionState)")
+
+            else:
+                self.logger.warning(
+                    f"⚠ Sleep prevention not implemented for {system}. "
+                    "Deploy to always-on hardware for reliable monitoring."
+                )
+
+        except Exception as e:
+            self.logger.error(
+                f"Failed to enable sleep prevention: {e}. "
+                "Computer may sleep and miss critical alerts! "
+                "Consider deploying to always-on hardware (Raspberry Pi, cloud VM, etc.)"
+            )
+
+    def _stop_sleep_prevention(self):
+        """Stop the sleep prevention process."""
+        system = platform.system()
+
+        try:
+            if self.caffeinate_process:
+                self.caffeinate_process.terminate()
+                try:
+                    self.caffeinate_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.caffeinate_process.kill()
+                self.logger.info("Sleep prevention stopped")
+
+            elif system == "Windows":
+                # Reset Windows sleep settings
+                import ctypes
+                ES_CONTINUOUS = 0x80000000
+                ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+                self.logger.info("Sleep prevention stopped (Windows)")
+
+        except Exception as e:
+            self.logger.error(f"Error stopping sleep prevention: {e}")
 
     def perform_checks(self):
         """Perform all enabled checks for all sites."""
@@ -606,6 +701,10 @@ class Monitor:
         """Start the monitor."""
         self.running = True
 
+        # CRITICAL: Prevent computer sleep for reliable monitoring
+        # If the computer sleeps, all monitoring stops and alerts won't be sent
+        self._start_sleep_prevention()
+
         # Validate credentials for all sites
         for site_config in self.sites:
             site_name = site_config.get("name", "Unknown")
@@ -697,6 +796,9 @@ class Monitor:
 
         # Save final state
         self.state_manager.save_state()
+
+        # Stop sleep prevention (allow computer to sleep again)
+        self._stop_sleep_prevention()
 
         # Log final metrics
         self._log_metrics_summary()
