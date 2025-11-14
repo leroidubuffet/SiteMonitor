@@ -134,12 +134,15 @@ bot:
 
 logging:
   level: INFO
+  main_log_level: INFO
+  error_log_level: ERROR
   file_path: "./logs/monitor.log"
   error_file_path: "./logs/monitor.error.log"
-  max_bytes: 10485760 # 10MB
-  backup_count: 5
+  rotation_when: "midnight" # Rotate at midnight each day (options: S, M, H, D, midnight, W0-W6)
+  rotation_interval: 1 # Every 1 day
+  backup_count: 7 # Keep 7 days of logs
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  date_format: "%Y-%m-%d %H:%M:%S"
+  date_format: "%d-%m-%Y- %H:%M:%S"
 
 performance:
   track_metrics: true

@@ -77,28 +77,37 @@ def setup_logging(
         log_dir = Path(log_config.get("file_path", "./logs/monitor.log")).parent
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Main log file with rotation
+        # Main log file with time-based rotation
         file_path = log_config.get("file_path", "./logs/monitor.log")
-        max_bytes = log_config.get("max_bytes", 10485760)  # 10MB
-        backup_count = log_config.get("backup_count", 5)
+        rotation_when = log_config.get("rotation_when", "midnight")  # When to rotate
+        rotation_interval = log_config.get("rotation_interval", 1)   # Every N periods
+        backup_count = log_config.get("backup_count", 7)             # Keep 7 days
+        main_log_level = log_config.get("main_log_level", level)     # Default to root level
 
-        file_handler = logging.handlers.RotatingFileHandler(
-            file_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            file_path,
+            when=rotation_when,
+            interval=rotation_interval,
+            backupCount=backup_count,
+            encoding="utf-8",
         )
-        file_handler.setLevel(getattr(logging, level))
+        file_handler.setLevel(getattr(logging, main_log_level))
         file_formatter = logging.Formatter(log_format, datefmt=date_format)
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
 
-        # Error log file (errors only)
+        # Error log file (warnings and errors)
         error_file_path = log_config.get("error_file_path", "./logs/monitor.error.log")
-        error_handler = logging.handlers.RotatingFileHandler(
+        error_log_level = log_config.get("error_log_level", "ERROR")  # Default to ERROR
+
+        error_handler = logging.handlers.TimedRotatingFileHandler(
             error_file_path,
-            maxBytes=max_bytes,
+            when=rotation_when,
+            interval=rotation_interval,
             backupCount=backup_count,
             encoding="utf-8",
         )
-        error_handler.setLevel(logging.ERROR)
+        error_handler.setLevel(getattr(logging, error_log_level))
         error_handler.setFormatter(file_formatter)
         root_logger.addHandler(error_handler)
 
