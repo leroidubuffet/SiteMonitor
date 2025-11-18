@@ -2,11 +2,12 @@
 
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 import httpx
 
-from .base_checker import BaseChecker, CheckResult, CheckStatus, SSRFProtectionError
 from .auth_checker import AuthChecker
+from .base_checker import BaseChecker, CheckResult, CheckStatus, SSRFProtectionError
 
 
 class HealthChecker(BaseChecker):
@@ -91,9 +92,7 @@ class HealthChecker(BaseChecker):
 
             # Make request with session cookies using SSRF-protected method
             response = self._make_request(
-                'get',
-                health_url,
-                cookies=self.auth_checker.session_cookies
+                "get", health_url, cookies=self.auth_checker.session_cookies
             )
 
             response_time_ms = (time.time() - start_time) * 1000
@@ -135,7 +134,7 @@ class HealthChecker(BaseChecker):
 
                 # Check response time
                 warning_threshold = self.config.get("performance", {}).get(
-                    "warning_threshold_ms", 3000
+                    "warning_threshold_ms", 5000
                 )
                 critical_threshold = self.config.get("performance", {}).get(
                     "critical_threshold_ms", 10000
