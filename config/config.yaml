@@ -146,7 +146,7 @@ logging:
 
 performance:
   track_metrics: true
-  warning_threshold_ms: 3000 # Warn if response > 3 seconds
+  warning_threshold_ms: 5000 # Warn if response > 5 seconds
   critical_threshold_ms: 10000 # Critical if response > 10 seconds
 
   metrics_to_track:
