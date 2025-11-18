@@ -3,10 +3,16 @@
 Test script for batch notifications and startup message
 """
 
+import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+import yaml
+from dotenv import find_dotenv, load_dotenv
+
+# Add parent directory to path to import src
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 print("=" * 60)
 print("Testing New Features")
@@ -16,6 +22,48 @@ print("\n1. Testing BATCH NOTIFICATIONS (debug mode)")
 print("-" * 60)
 print("Running: python3 main.py --check-once --telegram-debug")
 print("Expected: ONE batch message with all 7 check results")
+print("-" * 60)
+
+print("\n2. Testing HealthcheckMonitor Ping")
+print("-" * 60)
+
+# Load environment variables from config/.env file
+load_dotenv(dotenv_path=Path(__file__).parent.parent / "config" / ".env")
+
+from unittest.mock import patch
+
+from src.utils.healthcheck import HealthcheckMonitor
+
+
+def load_config():
+    """Load configuration from config.yaml"""
+    config_path = Path(__file__).parent.parent / "config" / "config.yaml"
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
+
+
+def test_healthcheck_ping():
+    """Test that HealthcheckMonitor sends pings correctly"""
+    with patch("httpx.post") as mock_post:
+        mock_post.return_value.status_code = 200
+
+        healthcheck_url = os.getenv("HEALTHCHECK_PING_URL")
+
+        print(f"Debug: HEALTHCHECK_PING_URL used in test: {healthcheck_url}")
+        monitor = HealthcheckMonitor(ping_url=healthcheck_url, enabled=True)
+        success = monitor.ping_success("Test message")
+
+        assert success is True
+        mock_post.assert_called_once_with(
+            healthcheck_url,
+            data="Test message".encode("utf-8"),
+            timeout=5.0,
+        )
+
+
+test_healthcheck_ping()
+
+print("Expected: Healthcheck ping sent successfully")
 print("-" * 60)
 
 import subprocess
