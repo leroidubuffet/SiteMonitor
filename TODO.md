@@ -1,10 +1,12 @@
 TODO
-Adjust failure thresholds
-Why does the bot get no answers?
+Add skade?
+Rounding
+Thresholds
+is healthchecker working?
 Add second level menu to the bot
-READ Functional analysys
+UPDATE Functional analysys
 READ Deployment guide
-Check logging
+Check loging
 README.md is too long now
 healthchecker.io settings/understanding
 App checker
