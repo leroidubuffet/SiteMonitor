@@ -39,20 +39,16 @@ class HealthcheckMonitor:
         Args:
             ping_url: Full ping URL from Healthchecks.io (e.g., https://hc-ping.com/your-uuid)
             enabled: Whether healthcheck pings are enabled
-        """
-        self.ping_url = ping_url
-        self.enabled = enabled and bool(ping_url)
-        self.logger = logging.getLogger(self.__class__.__name__)
 
-        if self.enabled:
-            self.logger.info("Healthcheck.io monitoring enabled")
-        else:
-            if not ping_url:
-                self.logger.debug(
-                    "Healthcheck.io monitoring disabled (no ping URL configured)"
-                )
-            else:
-                self.logger.debug("Healthcheck.io monitoring disabled in config")
+        Raises:
+            ValueError: If ping_url is not provided.
+        """
+        if not ping_url:
+            raise ValueError("HEALTHCHECK_PING_URL is not configured!")
+
+        self.ping_url = ping_url
+        self.enabled = enabled
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def ping_start(self) -> bool:
         """
@@ -159,5 +155,10 @@ def create_healthcheck_monitor(
 
     Returns:
         HealthcheckMonitor instance
+
+    Raises:
+        ValueError: If ping_url is not provided.
     """
+    if not ping_url:
+        raise ValueError("HEALTHCHECK_PING_URL is not configured!")
     return HealthcheckMonitor(ping_url=ping_url, enabled=enabled)
