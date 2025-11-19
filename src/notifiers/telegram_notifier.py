@@ -266,7 +266,9 @@ class TelegramNotifier(BaseNotifier):
             emoji = self._get_status_emoji(result.status)
             check_type = result.check_type.upper()[:4]  # Shortened
             response = (
-                f"{result.response_time_ms}ms" if result.response_time_ms else "N/A"
+                f"{round(result.response_time_ms)}ms"
+                if result.response_time_ms
+                else "N/A"
             )
 
             line = f"{emoji} `{self._escape_markdown(site_name)[:15]:15s}` {check_type} `{response}`"
@@ -359,7 +361,9 @@ class TelegramNotifier(BaseNotifier):
                     self.logger.debug("Telegram message sent successfully")
                     return True
                 else:
-                    self.logger.error(f"Telegram API error: {result.get('description')}")
+                    self.logger.error(
+                        f"Telegram API error: {result.get('description')}"
+                    )
                     return False
 
         except httpx.HTTPStatusError as e:
