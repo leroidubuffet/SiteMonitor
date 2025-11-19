@@ -18,7 +18,13 @@ from .checkers import AuthChecker, CheckResult, HealthChecker, UptimeChecker
 from .notifiers import ConsoleNotifier, EmailNotifier, TelegramNotifier
 from .scheduler import MonitorScheduler
 from .storage import CredentialManager, StateManager
-from .utils import MetricsCollector, setup_logging, create_healthcheck_monitor, ConfigValidator, ConfigValidationError
+from .utils import (
+    ConfigValidationError,
+    ConfigValidator,
+    MetricsCollector,
+    create_healthcheck_monitor,
+    setup_logging,
+)
 
 
 class Monitor:
@@ -62,8 +68,7 @@ class Monitor:
         healthcheck_config = self.config.get("healthcheck", {})
         healthcheck_url = self.credential_manager.get_healthcheck_url()
         self.healthcheck = create_healthcheck_monitor(
-            ping_url=healthcheck_url,
-            enabled=healthcheck_config.get("enabled", True)
+            ping_url=healthcheck_url, enabled=healthcheck_config.get("enabled", True)
         )
 
         # Get list of sites from config
@@ -84,8 +89,7 @@ class Monitor:
         # Dedicated thread pool executor for bot commands to prevent thread exhaustion
         # Limits concurrent /check commands to avoid blocking the bot's event loop
         self.bot_executor = ThreadPoolExecutor(
-            max_workers=2,
-            thread_name_prefix="bot_cmd"
+            max_workers=2, thread_name_prefix="bot_cmd"
         )
         if self.config.get("bot", {}).get("enabled", False):
             self.bot = self._initialize_bot()
@@ -231,18 +235,26 @@ class Monitor:
             # Get bot token
             bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
             if not bot_token:
-                self.logger.error("TELEGRAM_BOT_TOKEN not found in environment variables")
+                self.logger.error(
+                    "TELEGRAM_BOT_TOKEN not found in environment variables"
+                )
                 return None
 
             # Get authorized users
             authorized_users_str = os.getenv("TELEGRAM_AUTHORIZED_USERS", "")
             if not authorized_users_str:
-                self.logger.error("TELEGRAM_AUTHORIZED_USERS not found in environment variables")
+                self.logger.error(
+                    "TELEGRAM_AUTHORIZED_USERS not found in environment variables"
+                )
                 return None
 
             # Parse authorized users (comma-separated list of user IDs)
             try:
-                authorized_users = [int(uid.strip()) for uid in authorized_users_str.split(",") if uid.strip()]
+                authorized_users = [
+                    int(uid.strip())
+                    for uid in authorized_users_str.split(",")
+                    if uid.strip()
+                ]
             except ValueError as e:
                 self.logger.error(f"Invalid TELEGRAM_AUTHORIZED_USERS format: {e}")
                 return None
@@ -261,7 +273,9 @@ class Monitor:
                 executor=self.bot_executor,
             )
 
-            self.logger.info(f"Telegram bot initialized with {len(authorized_users)} authorized user(s)")
+            self.logger.info(
+                f"Telegram bot initialized with {len(authorized_users)} authorized user(s)"
+            )
             return bot
 
         except ImportError as e:
@@ -273,6 +287,7 @@ class Monitor:
 
     def _start_bot(self):
         """Start the Telegram bot in a separate thread."""
+
         def bot_thread_func():
             """Function to run bot in separate thread."""
             try:
@@ -331,9 +346,9 @@ class Monitor:
                 # -i prevents idle sleep
                 # -s prevents system sleep even when display sleeps
                 self.caffeinate_process = subprocess.Popen(
-                    ['caffeinate', '-i', '-s'],
+                    ["caffeinate", "-i", "-s"],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
                 )
                 self.logger.info("✓ Sleep prevention enabled (macOS caffeinate)")
 
@@ -341,11 +356,17 @@ class Monitor:
                 # Try systemd-inhibit on Linux
                 try:
                     self.caffeinate_process = subprocess.Popen(
-                        ['systemd-inhibit', '--what=sleep:idle', '--who=SiteMonitor',
-                         '--why=Critical monitoring active', '--mode=block',
-                         'sleep', 'infinity'],
+                        [
+                            "systemd-inhibit",
+                            "--what=sleep:idle",
+                            "--who=SiteMonitor",
+                            "--why=Critical monitoring active",
+                            "--mode=block",
+                            "sleep",
+                            "infinity",
+                        ],
                         stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stderr=subprocess.DEVNULL,
                     )
                     self.logger.info("✓ Sleep prevention enabled (systemd-inhibit)")
                 except FileNotFoundError:
@@ -358,6 +379,7 @@ class Monitor:
                 # Windows sleep prevention requires different approach
                 # We'll use SetThreadExecutionState via ctypes
                 import ctypes
+
                 ES_CONTINUOUS = 0x80000000
                 ES_SYSTEM_REQUIRED = 0x00000001
                 ES_AWAYMODE_REQUIRED = 0x00000040
@@ -365,7 +387,9 @@ class Monitor:
                 ctypes.windll.kernel32.SetThreadExecutionState(
                     ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED
                 )
-                self.logger.info("✓ Sleep prevention enabled (Windows SetThreadExecutionState)")
+                self.logger.info(
+                    "✓ Sleep prevention enabled (Windows SetThreadExecutionState)"
+                )
 
             else:
                 self.logger.warning(
@@ -396,6 +420,7 @@ class Monitor:
             elif system == "Windows":
                 # Reset Windows sleep settings
                 import ctypes
+
                 ES_CONTINUOUS = 0x80000000
                 ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
                 self.logger.info("Sleep prevention stopped (Windows)")
@@ -434,7 +459,7 @@ class Monitor:
 
         # Send healthcheck ping (external monitoring)
         if self.healthcheck.enabled:
-            message = f"Checked {len(self.sites)} sites, {total_results} checks completed"
+            message = f"Checked {len(self.sites)} sites, {total_results} checks completed. PETAO"
             self.healthcheck.ping_success(message)
 
         # Display metrics summary periodically
@@ -474,7 +499,11 @@ class Monitor:
                         # Skip health check if auth failed
                         if check_type == "health":
                             auth_result = next(
-                                (r for r in results if r.check_type == "authentication"),
+                                (
+                                    r
+                                    for r in results
+                                    if r.check_type == "authentication"
+                                ),
                                 None,
                             )
                             if auth_result and not auth_result.success:
@@ -484,7 +513,9 @@ class Monitor:
                                 continue
 
                         # Perform the check
-                        self.logger.debug(f"[{site_name}] Performing {check_type} check...")
+                        self.logger.debug(
+                            f"[{site_name}] Performing {check_type} check..."
+                        )
 
                         # Call check with site_name for per-site state
                         if check_type == "authentication":
@@ -521,7 +552,9 @@ class Monitor:
                                     "status", "SUCCESS"
                                 ).upper()
                                 previous_result = CheckResult(
-                                    check_type=previous_result_dict.get("check_type", ""),
+                                    check_type=previous_result_dict.get(
+                                        "check_type", ""
+                                    ),
                                     timestamp=datetime.fromisoformat(
                                         previous_result_dict.get("timestamp", "")
                                     ),
@@ -787,7 +820,7 @@ class Monitor:
         # Clean up checkers (if they exist as instance variables)
         # Note: In multi-site architecture, checkers are created per-check-cycle
         # and automatically cleaned up when they go out of scope
-        if hasattr(self, 'checkers') and self.checkers:
+        if hasattr(self, "checkers") and self.checkers:
             for checker in self.checkers.values():
                 try:
                     checker.cleanup()
