@@ -293,7 +293,9 @@ class AuthChecker(BaseChecker):
                     )
 
             # Determine success
-            if indicators_found and not failures_found:
+            # Prioritize success indicators: if we found positive proof of login,
+            # ignore generic failure keywords which might be false positives (e.g. "fail" in news text)
+            if indicators_found:
                 return {
                     "success": True,
                     "indicators_found": indicators_found,
