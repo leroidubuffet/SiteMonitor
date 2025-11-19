@@ -82,6 +82,26 @@ sites:
         - "sesión"
       max_retries: 2
 
+  - name: "SKADE IoT"
+    url: "https://iot.skade.es"
+    credential_key: "skade"
+    checks_enabled:
+      - uptime
+      - authentication
+    uptime:
+      endpoints:
+        - "/"
+      expected_status: [200, 301, 302]
+      check_ssl: true
+    authentication:
+      enabled: true
+      login_endpoint: "/users/sign_in"
+      success_indicators:
+        - "cerrar sesión"
+        - "profile"
+        - "stations"
+      max_retries: 2
+
 retry:
   max_attempts: 3
   max_backoff_seconds: 60
