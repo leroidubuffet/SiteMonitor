@@ -12,10 +12,11 @@ Usage:
     4. Enable in config.yaml
 
 The monitor will:
-    - Send a "start" ping when it starts up
-    - Send a "success" ping after each successful check cycle
-    - Send a "fail" ping if checks fail
+    - Send a heartbeat ping after each successful check cycle
     - If no ping received within timeout → you get alerted
+
+This operates as a "dead man's switch" - continuous heartbeats indicate
+the monitor is alive. If heartbeats stop, you get alerted.
 """
 
 import logging
@@ -67,10 +68,11 @@ class HealthcheckMonitor:
 
     def ping_success(self, message: str = None) -> bool:
         """
-        Send a 'success' signal after successful check cycle.
+        Send a heartbeat ping after successful check cycle.
 
-        Call this after each complete check cycle to indicate the monitor
-        is alive and working correctly.
+        This is the main "dead man's switch" signal. Call this after each
+        complete check cycle to indicate the monitor is alive and working.
+        If this stops being called, healthchecks.io will alert you.
 
         Args:
             message: Optional message to include (e.g., "Checked 5 sites")
@@ -81,7 +83,7 @@ class HealthcheckMonitor:
         if not self.enabled:
             return False
 
-        return self._send_ping("/success", message or "Check cycle completed")
+        return self._send_ping("", message or "Check cycle completed")
 
     def ping_fail(self, message: str = None) -> bool:
         """
@@ -101,12 +103,38 @@ class HealthcheckMonitor:
 
         return self._send_ping("/fail", message or "Check cycle failed")
 
+    def ping_exit(self, exit_status: int = 0, message: str = None) -> bool:
+        """
+        Send an exit status signal when the monitor is shutting down.
+
+        This reports the script's exit status (0-255 integer). Healthchecks.io
+        interprets 0 as success and all other values as failure. Use this for
+        graceful shutdowns to avoid false alerts.
+
+        Args:
+            exit_status: Exit code (0 = success, 1-255 = failure)
+            message: Optional shutdown message
+
+        Returns:
+            True if ping sent successfully
+        """
+        if not self.enabled:
+            return False
+
+        if not 0 <= exit_status <= 255:
+            self.logger.warning(
+                f"Invalid exit status {exit_status}, must be 0-255. Using 1 (failure)."
+            )
+            exit_status = 1
+
+        return self._send_ping(f"/{exit_status}", message or "Monitor shutting down")
+
     def _send_ping(self, suffix: str = "", message: str = None) -> bool:
         """
         Send ping to Healthchecks.io.
 
         Args:
-            suffix: URL suffix ("/start", "/fail", or empty for success)
+            suffix: URL suffix ("/start", "/success", "/fail", "/<exit_status>")
             message: Optional message to include in ping body
 
         Returns:

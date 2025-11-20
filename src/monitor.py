@@ -772,10 +772,6 @@ class Monitor:
         # Start scheduler
         self.scheduler.start()
 
-        # Send healthcheck start signal
-        if self.healthcheck.enabled:
-            self.healthcheck.ping_start()
-
         # Perform initial check
         self.logger.info("Performing initial check...")
         self.perform_checks()
