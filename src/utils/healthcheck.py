@@ -81,7 +81,7 @@ class HealthcheckMonitor:
         if not self.enabled:
             return False
 
-        return self._send_ping("", message or "Check cycle completed")
+        return self._send_ping("/success", message or "Check cycle completed")
 
     def ping_fail(self, message: str = None) -> bool:
         """
