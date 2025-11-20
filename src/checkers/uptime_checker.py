@@ -4,7 +4,7 @@ import socket
 import ssl
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from urllib.parse import urlparse
 
 import httpx
@@ -60,7 +60,7 @@ class UptimeChecker(BaseChecker):
 
                 try:
                     # Perform HTTP request with SSRF protection
-                    response = self._make_request('get', full_url)
+                    response = self._make_request("get", full_url)
                     status_code = response.status_code
 
                     # Extract performance metrics
@@ -101,7 +101,9 @@ class UptimeChecker(BaseChecker):
 
                 except SSRFProtectionError as e:
                     all_success = False
-                    error_messages.append(f"SSRF protection blocked {endpoint}: {str(e)}")
+                    error_messages.append(
+                        f"SSRF protection blocked {endpoint}: {str(e)}"
+                    )
                     self.logger.error(f"SSRF protection blocked {full_url}: {e}")
 
                 except httpx.TimeoutException as e:

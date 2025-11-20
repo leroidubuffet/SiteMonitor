@@ -4,12 +4,15 @@ Test script for batch notifications and startup message
 """
 
 import os
+import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
+
+from src.utils.healthcheck import HealthcheckMonitor
 
 # Add parent directory to path to import src
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,10 +32,6 @@ print("-" * 60)
 
 # Load environment variables from config/.env file
 load_dotenv(dotenv_path=Path(__file__).parent.parent / "config" / ".env")
-
-from unittest.mock import patch
-
-from src.utils.healthcheck import HealthcheckMonitor
 
 
 def load_config():
@@ -65,8 +64,6 @@ test_healthcheck_ping()
 
 print("Expected: Healthcheck ping sent successfully")
 print("-" * 60)
-
-import subprocess
 
 result = subprocess.run(
     ["python3", "main.py", "--check-once", "--telegram-debug"],

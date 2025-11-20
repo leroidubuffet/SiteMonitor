@@ -1,19 +1,21 @@
 """Base checker interface and common data structures."""
 
+import ipaddress
+import logging
+import socket
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Optional, Any, List
-import socket
-import ipaddress
-from urllib.parse import urlparse, urljoin
+from typing import Any, Dict, Optional
+from urllib.parse import urljoin, urlparse
+
 import httpx
-import logging
 
 
 class SSRFProtectionError(Exception):
     """Exception raised when SSRF protection blocks a request."""
+
     pass
 
 
@@ -115,9 +117,9 @@ class BaseChecker(ABC):
             # This is critical for long-running monitors to avoid accumulating
             # too many connections and file descriptors over time
             limits = httpx.Limits(
-                max_connections=10,        # Maximum total connections in pool
+                max_connections=10,  # Maximum total connections in pool
                 max_keepalive_connections=5,  # Maximum idle connections to keep alive
-                keepalive_expiry=30.0      # Close idle connections after 30 seconds
+                keepalive_expiry=30.0,  # Close idle connections after 30 seconds
             )
 
             self._client = httpx.Client(
@@ -175,18 +177,25 @@ class BaseChecker(ABC):
 
         # 3. Block localhost and loopback addresses (multiple representations)
         localhost_patterns = [
-            "localhost", "127.0.0.1", "::1", "0.0.0.0",
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            "0.0.0.0",
             "0000:0000:0000:0000:0000:0000:0000:0001",
-            "[::1]", "[0:0:0:0:0:0:0:1]"
+            "[::1]",
+            "[0:0:0:0:0:0:0:1]",
         ]
         if hostname in localhost_patterns or hostname.startswith("127."):
-            raise SSRFProtectionError(f"Localhost addresses are not allowed: {hostname}")
+            raise SSRFProtectionError(
+                f"Localhost addresses are not allowed: {hostname}"
+            )
 
         # 4. Block cloud metadata endpoints
         metadata_endpoints = [
             "169.254.169.254",  # AWS, Azure, GCP, Oracle Cloud
             "metadata.google.internal",  # GCP alternative
-            "metadata", "instance-data",  # Generic metadata hostnames
+            "metadata",
+            "instance-data",  # Generic metadata hostnames
             "fd00:ec2::254",  # AWS IPv6 metadata
         ]
         if hostname in metadata_endpoints or hostname.startswith("169.254."):
@@ -200,27 +209,19 @@ class BaseChecker(ABC):
 
             # Block private IP addresses
             if ip.is_private:
-                raise SSRFProtectionError(
-                    f"Private IP addresses are not allowed: {ip}"
-                )
+                raise SSRFProtectionError(f"Private IP addresses are not allowed: {ip}")
 
             # Block loopback addresses
             if ip.is_loopback:
-                raise SSRFProtectionError(
-                    f"Loopback addresses are not allowed: {ip}"
-                )
+                raise SSRFProtectionError(f"Loopback addresses are not allowed: {ip}")
 
             # Block link-local addresses
             if ip.is_link_local:
-                raise SSRFProtectionError(
-                    f"Link-local addresses are not allowed: {ip}"
-                )
+                raise SSRFProtectionError(f"Link-local addresses are not allowed: {ip}")
 
             # Block multicast addresses
             if ip.is_multicast:
-                raise SSRFProtectionError(
-                    f"Multicast addresses are not allowed: {ip}"
-                )
+                raise SSRFProtectionError(f"Multicast addresses are not allowed: {ip}")
 
             # Block reserved addresses
             if ip.is_reserved:
@@ -231,7 +232,7 @@ class BaseChecker(ABC):
             # Additional IPv6-specific checks
             if isinstance(ip, ipaddress.IPv6Address):
                 # Block Unique Local Addresses (fc00::/7) - IPv6 equivalent of private IPs
-                if ip.packed[0] & 0xfe == 0xfc:
+                if ip.packed[0] & 0xFE == 0xFC:
                     raise SSRFProtectionError(
                         f"IPv6 Unique Local Addresses are not allowed: {ip}"
                     )
@@ -250,10 +251,24 @@ class BaseChecker(ABC):
 
             # Block common private IP patterns in hostname strings
             private_ip_prefixes = [
-                "10.", "172.16.", "172.17.", "172.18.", "172.19.",
-                "172.20.", "172.21.", "172.22.", "172.23.", "172.24.",
-                "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
-                "172.30.", "172.31.", "192.168."
+                "10.",
+                "172.16.",
+                "172.17.",
+                "172.18.",
+                "172.19.",
+                "172.20.",
+                "172.21.",
+                "172.22.",
+                "172.23.",
+                "172.24.",
+                "172.25.",
+                "172.26.",
+                "172.27.",
+                "172.28.",
+                "172.29.",
+                "172.30.",
+                "172.31.",
+                "192.168.",
             ]
             if any(hostname.startswith(prefix) for prefix in private_ip_prefixes):
                 raise SSRFProtectionError(
@@ -264,7 +279,9 @@ class BaseChecker(ABC):
             if validate_dns:
                 try:
                     resolved_ip = self._resolve_and_validate_dns(hostname)
-                    self.logger.debug(f"DNS validation passed: {hostname} -> {resolved_ip}")
+                    self.logger.debug(
+                        f"DNS validation passed: {hostname} -> {resolved_ip}"
+                    )
                 except SSRFProtectionError:
                     raise
                 except Exception as e:
@@ -320,9 +337,7 @@ class BaseChecker(ABC):
             return resolved_ip_str
 
         except socket.gaierror as e:
-            raise SSRFProtectionError(
-                f"Failed to resolve hostname '{hostname}': {e}"
-            )
+            raise SSRFProtectionError(f"Failed to resolve hostname '{hostname}': {e}")
 
     def _validate_redirect_url(self, redirect_url: str, base_url: str) -> bool:
         """
@@ -359,11 +374,7 @@ class BaseChecker(ABC):
         return self._validate_url(redirect_url, validate_dns=True)
 
     def _make_request(
-        self,
-        method: str,
-        url: str,
-        validate_dns: bool = True,
-        **kwargs
+        self, method: str, url: str, validate_dns: bool = True, **kwargs
     ) -> httpx.Response:
         """
         Make an HTTP request with SSRF protection.
@@ -401,7 +412,7 @@ class BaseChecker(ABC):
 
                 for hist_response in response.history:
                     if hist_response.is_redirect:
-                        redirect_url = hist_response.headers.get('location')
+                        redirect_url = hist_response.headers.get("location")
                         if redirect_url:
                             try:
                                 # Validate redirect (handles both absolute and relative URLs)
@@ -494,7 +505,9 @@ class BaseChecker(ABC):
             self._client.close()
             self._client = None
 
-    def _check_response_size(self, response: httpx.Response, max_size: int = None) -> bool:
+    def _check_response_size(
+        self, response: httpx.Response, max_size: int = None
+    ) -> bool:
         """
         Check if response size is within acceptable limits.
 

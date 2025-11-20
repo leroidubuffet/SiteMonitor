@@ -1,7 +1,6 @@
 """Main monitor orchestrator that coordinates all components."""
 
 import asyncio
-import logging
 import os
 import platform
 import signal
