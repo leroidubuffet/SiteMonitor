@@ -459,7 +459,9 @@ class Monitor:
 
         # Send healthcheck ping (external monitoring)
         if self.healthcheck.enabled:
-            message = f"Checked {len(self.sites)} sites, {total_results} checks completed. PETAO"
+            message = (
+                f"Checked {len(self.sites)} sites, {total_results} checks completed."
+            )
             self.healthcheck.ping_success(message)
 
         # Display metrics summary periodically
