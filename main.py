@@ -229,7 +229,7 @@ Examples:
     ║   https://www.dgt.es/                                 ║
     ║   https://vialidad.acpofiteco.com/                    ║
     ║   https://www.fomento-vi.es/                          ║
-    ║   https://iot.eskade.es/                          ║
+    ║   https://iot.eskade.es/                              ║
     ║  Interval: Every 15 minutes                           ║
     ║  Telegram enabled: Yes                                ║
     ║  Press Ctrl+C to stop                                 ║
